@@ -1,2 +1,9 @@
-# Non-Markovian-Noise-Project
-Python script and Zurich Instruments drivers used for the non-Markovian noise project. 
+# Zhinst Measurement code
+
+Code for measurement with Zurich Instruments
+
+**Supported Instruments**
+
+UHFQA
+
+HDAWG

@@ -1220,7 +1220,6 @@ daq.setInt('/dev2528/system/calib/calibrate',1)
 for i in trange(len(B0),desc='B0 Loop'):
     for j in trange(len(nu),desc='nu Loop'):
         for k in trange(len(tau),desc='tauk Loop'):
-            for q in trange(10):
             start_point_t = time.time()
             # load noise instances
             # B0[i] = np.around(expf.convertB0_kHz_to_mV(B0_kHz[i]),5)*1e-3

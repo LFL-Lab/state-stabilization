@@ -25,7 +25,7 @@ import itertools
 from VISAdrivers.sa_api import *
 import collections
 from scipy import optimize,fft
-import statsmodels.api as sm
+# import statsmodels.api as sm
 # from PyTektronixScope import PyTektronixScope
 import seaborn as sns; sns.set() # styling
 

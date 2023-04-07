@@ -7,7 +7,7 @@
 
 
 import textwrap
-import zhinst.qcodes
+# import zhinst.qcodes
 import json
 import urllib
 import jsonschema

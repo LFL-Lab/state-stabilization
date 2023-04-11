@@ -91,8 +91,8 @@ def init_wfms(awg,device_awg,nPoints,nWfs):
     enable_awg(awg,device_awg,enable=1)
 
 
-def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, pi2Width=100,nPointsPre=900,nPointsPost=120,
-            measPeriod=400e-6,sequence='rabi',qubit_drive_dur=30e-6,mu=0,sigma=0,B0=0,
+def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=100,nPointsPre=900,nPointsPost=120,
+            measPeriod=400e-6,sequence='rabi',qubit_drive_dur=20e-6,mu=0,sigma=0,B0=0,
             Tmax=2e-6,nAverages=128,active_reset=False,axis='X'):
     """
 
@@ -209,7 +209,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, pi2Width=100,nPointsPre=
         const period_wait_sample = floor(_c1_*measInt_fs);
         var i=0;
 
-        wave w_marker = 2*marker(1024,1);
+        wave w_marker = 2*marker(256,1);
 
         _add_white_noise_
         // Beginning of the core sequencer program executed on the HDAWG at run time
@@ -242,9 +242,9 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, pi2Width=100,nPointsPre=
             awg_program = awg_program.replace('_add_AC_post_pulse_',txt3)
         else:
             if axis == 'X':
-                awg_program = awg_program.replace('_add_white_noise_',"wave drive_pulse=_c3_*ones(N);\n"+"assignWaveIndex(drive_pulse,0);\n")
+                awg_program = awg_program.replace('_add_white_noise_',"wave drive_pulse=_c4_*ones(_c5_);\n"+"assignWaveIndex(drive_pulse,0);\n")
             elif axis == 'Y':
-                awg_program = awg_program.replace('_add_white_noise_',"wave drive_pulse=_c3_*ones(N);\n"+"assignWaveIndex(zeros(N),drive_pulse,0);\n")
+                awg_program = awg_program.replace('_add_white_noise_',"wave drive_pulse=_c4_*ones(_c5_);\n"+"assignWaveIndex(zeros(N),drive_pulse,0);\n")
             awg_program = awg_program.replace('_add_AC_pre_pulse_','')
             awg_program = awg_program.replace('_add_AC_post_pulse_','')
 
@@ -252,6 +252,8 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, pi2Width=100,nPointsPre=
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_',str(nAverages))
         awg_program = awg_program.replace('_c3_',str(nSteps))
+        awg_program = awg_program.replace('_c4_',str(amplitude_hd))
+        awg_program = awg_program.replace('_c5_',str(nPoints))
         awg.setInt('/dev8233/triggers/out/0/source',4)
 
     elif sequence =='ramsey':
@@ -602,8 +604,12 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, pi2Width=100,nPointsPre=
 
     elif sequence == 'mixer_calib':
         awg_program = textwrap.dedent("""
+            const N = 96;
+            wave w_I = gauss(N,N/2,N/8);
+            wave zero_wfm = zeros(N);
+
             while (true) {
-                    playWave(ones(100000),ones(100000));
+                    playWave(1,w_I,2,zero_wfm);
                     waitWave();
                     }
                                       """)

@@ -24,7 +24,7 @@ from scipy import optimize
 from HDAWG import awg_seq
 from UHFQA import setup_mixer_calib
 
-def get_power(sa,inst,fc=4e9,threshold=-50,config=False,plot=False):
+def get_power(sa,inst,fc=4e9,threshold=-50,config=False,plot=False,output=False):
     """
     Measures the power at a specific frequency using the spectrum analyzer. Can calculate the ON/OFF ratio if desired.
 
@@ -61,7 +61,7 @@ def get_power(sa,inst,fc=4e9,threshold=-50,config=False,plot=False):
     if plot:
         pf.power_plot(freqs, signal, power, fc=fc)
         if output:
-            print(f'{power} dBm at {freq/1e9} GHz')
+            print(f'{power} dBm at {fc/1e9} GHz')
     return power
 
 def config_sa(sa,fc,span=5e6,reference=-30):
@@ -272,8 +272,8 @@ def suppr_image(sa,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_I
         inst.setDouble(f'/{device}/sigouts/{channels[1]}/offset',opt_amp)
         inst.sync()
         print(f'optimal phi = {round(opt_phi,3)}, optimal amp = {round(1e3*opt_amp,1)}')
-        
-        
+
+
         # find index of voltage corresponding to minimum LO leakage
         min_ind1 = np.argmin(imPower1)
         min_ind2 = np.argmin(imPower2)

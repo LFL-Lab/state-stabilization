@@ -24,6 +24,7 @@ import glob
 import scipy as scy
 import plot_functions as pf
 import pandas as pd
+import zhinst.toolkit as zt
 
 plt.rcParams['figure.dpi'] = 150
 pi = np.pi
@@ -32,7 +33,7 @@ pi = np.pi
 '''Instruments and connection'''
 qa_id = 'dev2528'
 awg_id = 'dev8233'
-meas_device = "CandleQubit_6"
+meas_device = "SCQ01"
 
 # Instrument Addresses
 qubitLO_IP = "USB0::0x03EB::0xAFFF::621-03A100000-0538::0::INSTR"
@@ -57,6 +58,9 @@ attenuation = 25
 attn.setAttenuation(devID=1, atten=attenuation)
 
 '''Initialize connection with Zurich Instruments'''
+session = zt.Session('localhost')
+awg = session.connect_device(awg_id).awgs[0]
+qa = session.connect_device(qa_id).qa
 daq, device_qa = qa.create_api_sessions_uhf('dev2528', use_discovery= 1, ip='127.0.0.1')
 awg, device_awg = hd.create_api_sessions_hd('dev8233', use_discovery= 1, ip = '127.0.0.1')
 
@@ -102,17 +106,17 @@ except:
     iteration_spec = 1
 
 options_spec = {
-    'frequencies':      np.arange(start=3.8,stop=4.1,step=200e-6), # frequencies are in GHz
+    'frequencies':      np.arange(start=3.8,stop=3.9,step=100e-6), # frequencies are in GHz
     'nAverages':        512,
     'setup':            True,
-    'qubit_drive_amp':     400e-3,
+    'qubit_drive_amp':     200e-3,
     'readout_drive_amp':     0.7,
     'cav_resp_time':        0.185e-6,
     'integration_length':   2.3e-6,
     }
 
 p_data,I,Q = expf.spectroscopy(daq,awg,qubitLO=qubitLO,**options_spec)
-pf.spec_plot(freq=options_spec['frequencies'],I=I,Q=Q)
+pf.spec_plot(freq=options_spec['frequencies'],I=I,Q=Q,element='qubit',find_peaks=True)
 
 exp_pars = options_spec
 with open("E:\\generalized-markovian-noise\\%s\\spectroscopy\\%s_data_%03d.csv"%(meas_device,'spectroscopy',iteration_spec),"w",newline="") as datafile:
@@ -138,40 +142,25 @@ except:
 
 options_rabi = {
     'sampling_rate':    2.4e9,
-    'qubitDriveFreq':   3.3321e9,
+    'qubitDriveFreq':   3.8296e9,
     'integration_length':   2.3e-6,
-    'prePulseLength':   0e-9,
-    'postPulseLength':  0e-9,
     'cav_resp_time':    0.185e-6,
     'nAverages':        64,
     'stepSize':         6e-9,
     'Tmax':             0.6e-6,
     'amplitude_hd':     A_d,
     'measPeriod':       600e-6,
-    'mu':               0,
-    'sigma':            0,
-    'AC_freq':          7.4586e9,
-    'source':           2,
-    'axis':             'X',
-    'noise_rate':       0,
     }
 
-# if options_rabi['mu'] == 0 and options_rabi['sigma'] == 0:
-#     acStarkLO.setRFOn(bRFOn=False)
-# else:
-#     acStarkLO.setRFOn(bRFOn=True)
-#     acStarkLO.setFrequency(options_rabi['AC_freq'])
 
 qubitLO.set_freq(options_rabi['qubitDriveFreq']/1e9)
 qubitLO.RF_OFF()
 qubitLO.RF_ON()
 
 t,data,nSteps = expf.pulse(daq,awg,sequence='rabi',**options_rabi)
-# data = data[0]
 # plot data
-# options_rabi['AC_pars'][0] = options_rabi['AC_pars'][0]*6/20
-fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='rabi',dt=t[-1]/nSteps,verbose=0,**options_rabi)
-pf.plot_data(awg,x_vector=t,y_vector=data,fitted_pars=fitted_pars,sequence='rabi',**options_rabi,iteration=iteration_rabi)
+fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='rabi',dt=t[-1]/nSteps,verbose=0)
+pf.plot_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars,sequence='rabi',**options_rabi,iteration=iteration_rabi)
 
 pi_pulse = np.round(1/2*fitted_pars[1])
 threshold = round(np.mean(data)*2**12)

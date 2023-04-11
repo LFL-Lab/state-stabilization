@@ -97,9 +97,9 @@ def readoutSetup(daq,sequence='time',readout_pulse_length=1.2e-6,rr_IF=5e6,cav_r
         qa.awg_seq_readout(daq, readout_length=readout_pulse_length,rr_IF=rr_IF,nPoints=roundToBase(readout_pulse_length*fs),base_rate=fs,cav_resp_time=cav_resp_time,amplitude_uhf=readout_amp)
         daq.setInt('/dev2528/awgs/0/time',2)
 
-def pulsed_spec_setup(daq,awg,nAverages,qubit_drive_amp,mu=0,sigma=0,qubit_drive_dur=30e-6,result_length=1,integration_length=2e-6,nPointsPre=0,nPointsPost=0,delay=500):
+def pulsed_spec_setup(daq,awg,nAverages,qubit_drive_amp,mu=0,sigma=0,qubit_drive_dur=20e-6,result_length=1,integration_length=2e-6,nPointsPre=0,nPointsPost=0,delay=500,measPeriod=100e-6):
     '''Setup HDAWG and UHFQA for pulsed spectroscopy'''
-    hd.awg_seq(awg,sequence='qubit spec',fs=0.6e9,nAverages=nAverages,qubit_drive_dur=qubit_drive_dur,mu=mu,sigma=sigma,amplitude_hd= qubit_drive_amp,nPointsPre=nPointsPre,nPointsPost=nPointsPost)
+    hd.awg_seq(awg,sequence='qubit spec',fs=0.6e9,nAverages=nAverages,qubit_drive_dur=qubit_drive_dur,measPeriod=measPeriod,mu=mu,sigma=sigma,amplitude_hd= qubit_drive_amp,nPointsPre=nPointsPre,nPointsPost=nPointsPost)
     awg.setInt('/dev8233/awgs/0/time',2) # sets AWG sampling rate to 600 MHz
     qa.config_qa(daq,sequence='spec',integration_length=integration_length,nAverages=1,result_length=result_length,delay=delay)
 
@@ -110,8 +110,8 @@ def single_shot_setup(daq,awg,nAverages=1024,qubit_drive_amp=0.1,mu=0,sigma=0,fs
     hd.awg_seq(awg,sequence='single_shot',fs=fs,nAverages=nAverages,mu=mu,sigma=sigma,amplitude_hd=qubit_drive_amp,measPeriod=measPeriod,pi2Width=pi2Width)
     awg.setInt('/dev8233/awgs/0/time',2) # sets AWG sampling rate to 600 MHz
 
-def seq_setup(awg,sequence='rabi',nAverages=128,prePulseLength=1500e-9,postPulseLength=1500e-9,nPoints=1024,pulse_length_start=32,
-              fs=2.4e9,nSteps=100,pulse_length_increment=16,Tmax=0.3e-6,amplitude_hd=1,mu=0,sigma=0,pi2Width=0,piWidth_Y=0,
+def seq_setup(awg,sequence='rabi',nAverages=128,nPoints=1024,pulse_length_start=32,
+              fs=2.4e9,nSteps=100,pulse_length_increment=16,Tmax=0.3e-6,amplitude_hd=1,sigma=0,pi2Width=0,piWidth_Y=0,
               pipulse_position=20e-9,measPeriod=200e-6,instance=0,B0=0,active_reset=False,axis='X',noise_rate=1,qb_IF=50e6):
     """
     Function Description
@@ -149,29 +149,15 @@ def seq_setup(awg,sequence='rabi',nAverages=128,prePulseLength=1500e-9,postPulse
 
     """
     fs_base = 2.4e9
-    pi2Width = round(fs * pi2Width)
-    piWidth_Y = round(fs*piWidth_Y)
-    if mu != 0 or sigma != 0:
-        nPointsPre = roundToBase(prePulseLength*fs+pi2Width)
-        nPointsPost = roundToBase(postPulseLength*fs+pi2Width)
-        if nPointsPre > 2048 or nPointsPost > 2048:
-            print('Too many points in your AC pre/post pulses!(%d,%d)'%(nPointsPre,nPointsPost))
-            sys.exit()
-        else:
-            pass
-    else:
-        nPointsPre = 0
-        nPointsPost = 0
 
     awg.setDouble('/dev8233/oscs/0/freq', qb_IF) # set the IF frequency of the modulator
     # Generate and compile program
     print('-------------Setting HDAWG sequence-------------')
     bt = time.time()
     awg.setInt('/dev8233/awgs/0/time',(int(fs_base/fs-1))) # set sampling rate of AWG
-    hd.awg_seq(awg,mu=mu,sigma=sigma,B0=B0,axis=axis,fs=fs,nPoints=nPoints,pulse_length_increment=pulse_length_increment,nSteps=nSteps,
-               nPointsPre=nPointsPre,pi2Width=pi2Width,pipulse_position=round(fs*pipulse_position),piWidth_Y=piWidth_Y,
-               nPointsPost=nPointsPost,Tmax=Tmax,amplitude_hd=amplitude_hd,nAverages=nAverages,sequence=sequence,measPeriod=measPeriod,
-               active_reset=active_reset)
+    hd.awg_seq(awg,sigma=sigma,B0=B0,axis=axis,fs=fs,nSteps=nSteps,nPoints=nPoints,
+               pi2Width=pi2Width, Tmax=Tmax,amplitude_hd=amplitude_hd,nAverages=nAverages,
+               sequence=sequence,measPeriod=measPeriod,active_reset=active_reset)
     et = time.time()
     print('HDAWG compilation duration: %.1f s'%(et-bt))
 
@@ -179,9 +165,8 @@ def seq_setup(awg,sequence='rabi',nAverages=128,prePulseLength=1500e-9,postPulse
         ct = {}
     else:
         # create and upload command table
-        ct=ctfuncs.ct_pulse_length(n_wave=nSteps, pulse_length_start=pulse_length_start, pulse_length_increment=pulse_length_increment,mu=mu,
-                                   AC_pre_length=nPointsPre,AC_post_length=nPointsPost, pipulse=2*pi2Width,active_reset=active_reset,
-                                   sequence=sequence,noise_rate=noise_rate)
+        ct=ctfuncs.ct_pulse_length(n_wave=nSteps, pulse_length_start=pulse_length_start, pulse_length_increment=pulse_length_increment,
+                                   pipulse=2*pi2Width,active_reset=active_reset,sequence=sequence,noise_rate=noise_rate)
         awg.setVector("/dev8233/awgs/0/commandtable/data", json.dumps(ct))
 
     awg.sync()
@@ -251,7 +236,7 @@ def spectroscopy(daq,awg,qubitLO=0,cav_resp_time=1e-6,integration_length=2e-6,AC
     readout_pulse_length = integration_length + cav_resp_time + 2e-6
     # daq.setDouble('/dev2528/sigouts/0/amplitudes/0', readout_drive_amp)
     nPointsPre = nPointsPost = roundToBase(500e-9*fsAWG,base=16)
-    qubit_drive_dur = roundToBase(30e-6*fsAWG,base=16)
+    qubit_drive_dur = roundToBase(60e-6*fsAWG,base=16)
     if setup:
         pulsed_spec_setup(daq, awg, result_length=result_length,mu=mu,sigma=sigma,qubit_drive_dur=qubit_drive_dur,integration_length=integration_length,nAverages=nAverages,qubit_drive_amp=qubit_drive_amp,nPointsPre=nPointsPre,nPointsPost=nPointsPost,delay=cav_resp_time)
         readoutSetup(daq, sequence='spec',readout_pulse_length=readout_pulse_length,cav_resp_time=cav_resp_time)
@@ -259,12 +244,10 @@ def spectroscopy(daq,awg,qubitLO=0,cav_resp_time=1e-6,integration_length=2e-6,AC
 
     # initialize signal generators and set power
 
-
     print('Start measurement')
     sweep_data, paths = qa.create_sweep_data_dict(daq, 'dev2528')
     data_ON = []
     data_OFF = []
-
 
     qa.enable_awg(daq, 'dev2528') # start the readout sequence
     bt = time.time()
@@ -342,7 +325,7 @@ def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,pos
 
     if setup[0] == 0:
 
-        nPoints,nSteps,pulse_length_increment,pulse_length_start = calc_nSteps(sequence=sequence,fsAWG=fs,piWidth_Y=piWidth_Y,
+        nPoints,nSteps,pulse_length_increment,pulse_length_start = calc_nSteps(sequence=sequence,fsAWG=fs,
                                                                                stepSize=stepSize,Tmax=Tmax,verbose=verbose)
 
         if sequence == 'ramsey' or sequence == 'echo' or sequence == 'T1':
@@ -354,8 +337,8 @@ def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,pos
 
         nSteps,ct = seq_setup(awg,noise_rate=noise_rate,sequence=sequence,axis=axis,piWidth_Y=piWidth_Y,pipulse_position=pipulse_position,nSteps=nSteps,
                               nPoints=nPoints,fs=fs,pulse_length_start=pulse_length_start,pulse_length_increment=pulse_length_increment,
-                              instance=instance,amplitude_hd=amplitude_hd,nAverages=nAverages,pi2Width=pi2Width,prePulseLength=prePulseLength,
-                              postPulseLength=postPulseLength,Tmax=Tmax,mu=mu,sigma=sigma,B0=B0,measPeriod=measPeriod,active_reset=active_reset)
+                              instance=instance,amplitude_hd=amplitude_hd,nAverages=nAverages,pi2Width=pi2Width,
+                              Tmax=Tmax,sigma=sigma,B0=B0,measPeriod=measPeriod,active_reset=active_reset)
 
     elif setup[0] == 2:
         bt = time.time()

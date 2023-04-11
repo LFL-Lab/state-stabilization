@@ -65,7 +65,6 @@ def tof_plot(adc1,adc2):
 #%% spec_plot
 def spec_plot(freq,I,Q,attenuation=-30,df=0.1e6,plot='mag',element='resonator',fwhm=0,fc=0,qb_power=0,rr_power=0,rrFreq=0,iteration=1,find_peaks=False):
 
-    
     I = I*1e3
     Q = Q*1e3
     mag = np.abs(I+1j*Q)
@@ -73,8 +72,8 @@ def spec_plot(freq,I,Q,attenuation=-30,df=0.1e6,plot='mag',element='resonator',f
     phase = np.unwrap(np.angle(I+1j*Q))
     if element == 'qubit' and find_peaks:
         sigma = np.std(mag)
-        print(f'Peak threshold at {np.mean(mag)+5*sigma}')
-        peaks,_ = scy.signal.find_peaks(mag,height=np.mean(mag)+5*sigma,distance=200,width=3)
+        print(f'Peak threshold at {np.mean(mag)+3*sigma}')
+        peaks,_ = scy.signal.find_peaks(mag,height=np.mean(mag)+3*sigma,distance=200,width=3)
         try:
             for i in peaks:
                 print(f'Peaks at: {round(freq[i],5)} GHz\n')
@@ -251,7 +250,7 @@ def fit_data(x_vector,y_vector,sequence='rabi',dt=0.01,fitFunc='',verbose=0):
     y_vector:           voltage data
     dt:                 sequence stepsize. Used for extracting the frequency of the data
     '''
-    x_vector = x_vector
+    x_vector = x_vector*1e6
     y_vector = y_vector*1e3
 
     amp = (max(y_vector)-min(y_vector))/2
@@ -364,13 +363,13 @@ def fit_data(x_vector,y_vector,sequence='rabi',dt=0.01,fitFunc='',verbose=0):
 
 
 #%% plot_data
-def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,qb_power=1,
-                              pi2Width='',nAverages=1,
+def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,amplitude_hd=1,
+                              pi2Width='',nAverages=1, sampling_rate=1e9,
                               integration_length=2e-6,cav_resp_time=5e-6,stepSize=5e-6, iteration = 1,
                               Tmax=5e-6,measPeriod=5e-6,active_reset=False,
                               fitted_pars=np.zeros(7),plot_mode=0,rr_IF=5e6,fitFunc='',savefig=True):
 
-    # x_vector = x_vector*1e3
+    x_vector = x_vector*1e6
     y_vector = y_vector*1e3
 
     if sequence == "p-rabi":
@@ -389,7 +388,7 @@ def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,qb_power=1,
         ax.set_xlabel('Pulse Duration (ns)')
         ax.plot(x_vector*1e3,rabi(x_vector*1e3, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
         ax.set_title('Rabi Measurement %03d'%(iteration))
-        textstr = '$\omega_d$ = %.4f GHz\n$P_{qb}$ = %.2f dBm\n$T_{\pi/2}$ = %.1f ns\n$\hat{n}$ = %d'%(qubitDriveFreq*1e-9,qb_power,round(fitted_pars[1]/4,1),nAverages)
+        textstr = '$\omega_d$ = %.4f GHz\n$P_{qb}$ = %.2f mV\n$T_{\pi/2}$ = %.1f ns\n$\hat{n}$ = %d'%(qubitDriveFreq*1e-9,amplitude_hd*1e3,round(fitted_pars[1]/4,1),nAverages)
 
     elif sequence == "ramsey":
 

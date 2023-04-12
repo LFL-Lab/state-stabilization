@@ -99,7 +99,7 @@ def readoutSetup(daq,sequence='time',readout_pulse_length=1.2e-6,rr_IF=5e6,cav_r
 
 def pulsed_spec_setup(daq,awg,nAverages,qubit_drive_amp,mu=0,sigma=0,qubit_drive_dur=20e-6,result_length=1,integration_length=2e-6,nPointsPre=0,nPointsPost=0,delay=500,measPeriod=100e-6):
     '''Setup HDAWG and UHFQA for pulsed spectroscopy'''
-    hd.awg_seq(awg,sequence='qubit spec',fs=0.6e9,nAverages=nAverages,qubit_drive_dur=qubit_drive_dur,measPeriod=measPeriod,mu=mu,sigma=sigma,amplitude_hd= qubit_drive_amp,nPointsPre=nPointsPre,nPointsPost=nPointsPost)
+    hd.awg_seq(awg,sequence='qubit spec',fs=0.6e9,nAverages=nAverages,qubit_drive_dur=qubit_drive_dur,measPeriod=measPeriod,mu=mu,sigma=sigma,amp_q= qubit_drive_amp,nPointsPre=nPointsPre,nPointsPost=nPointsPost)
     awg.setInt('/dev8233/awgs/0/time',2) # sets AWG sampling rate to 600 MHz
     qa.config_qa(daq,sequence='spec',integration_length=integration_length,nAverages=1,result_length=result_length,delay=delay)
 
@@ -107,11 +107,43 @@ def single_shot_setup(daq,awg,nAverages=1024,qubit_drive_amp=0.1,mu=0,sigma=0,fs
     '''Setup HDAWG for single shot experiment'''
     pi2Width = int(pi2Width*fs)
     print('-------------Setting HDAWG sequence-------------')
-    hd.awg_seq(awg,sequence='single_shot',fs=fs,nAverages=nAverages,mu=mu,sigma=sigma,amplitude_hd=qubit_drive_amp,measPeriod=measPeriod,pi2Width=pi2Width)
+    hd.awg_seq(awg,sequence='single_shot',fs=fs,nAverages=nAverages,mu=mu,sigma=sigma,amp_q=qubit_drive_amp,measPeriod=measPeriod,pi2Width=pi2Width)
     awg.setInt('/dev8233/awgs/0/time',2) # sets AWG sampling rate to 600 MHz
 
+def ssb_setup(awg,qb_IF=50e6):
+
+    awg.setDouble('/dev8233/oscs/0/freq', qb_IF)
+    awg.setDouble('/dev8233/sines/1/phaseshift', 90)
+    awg.setInt('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
+    awg.setInt('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
+    awg.setDouble('/dev8233/sigouts/0/range', 0.6)
+    awg.setDouble('/dev8233/sigouts/1/range', 0.6)
+
+def IQ_imbalance(awg,g,phi):
+    """
+    Calculates the correction matrix (C**-1) and applies it to the AWG
+
+    Args:
+        awg: awg instance to apply correction
+        g (TYPE): amplitude imbalance.
+        phi (TYPE): phase imbalance.
+
+    Returns:
+        list: correction matrix.
+
+    """
+
+    c = np.cos(phi)
+    s = np.sin(phi)
+    N = 1 / ((1-g**2)*(2*c**2-1))
+    corr = np.array([float(N * x) for x in [(1-g)*c, (1+g)*s, (1-g)*s, (1+g)*c]]).reshape(2,2)
+
+    for i in range(2):
+        for j in range(2):
+            awg.setDouble(f'/dev8233/awgs/0/outputs/{j}/gains/{i}', corr[i,j])
+
 def seq_setup(awg,sequence='rabi',nAverages=128,nPoints=1024,pulse_length_start=32,
-              fs=2.4e9,nSteps=100,pulse_length_increment=16,Tmax=0.3e-6,amplitude_hd=1,sigma=0,pi2Width=0,piWidth_Y=0,
+              fs=2.4e9,nSteps=100,pulse_length_increment=16,Tmax=0.3e-6,amp_q=1,sigma=0,pi2Width=0,piWidth_Y=0,
               pipulse_position=20e-9,measPeriod=200e-6,instance=0,B0=0,active_reset=False,axis='X',noise_rate=1,qb_IF=50e6):
     """
     Function Description
@@ -138,7 +170,7 @@ def seq_setup(awg,sequence='rabi',nAverages=128,nPoints=1024,pulse_length_start=
         dt in AWG samples (1/fs). The default is 16.
     Tmax : float
     active_reset: Boolean
-    amplitude_hd : TYPE, optional
+    amp_q : TYPE, optional
         qubit drive and B0 (if applicable) amplitude. The default is 1.
     pi2Width : TYPE, optional
         pi/2 duration The default is 50e-9.
@@ -156,7 +188,7 @@ def seq_setup(awg,sequence='rabi',nAverages=128,nPoints=1024,pulse_length_start=
     bt = time.time()
     awg.setInt('/dev8233/awgs/0/time',(int(fs_base/fs-1))) # set sampling rate of AWG
     hd.awg_seq(awg,sigma=sigma,B0=B0,axis=axis,fs=fs,nSteps=nSteps,nPoints=nPoints,
-               pi2Width=pi2Width, Tmax=Tmax,amplitude_hd=amplitude_hd,nAverages=nAverages,
+               pi2Width=pi2Width, Tmax=Tmax,amp_q=amp_q,nAverages=nAverages,
                sequence=sequence,measPeriod=measPeriod,active_reset=active_reset)
     et = time.time()
     print('HDAWG compilation duration: %.1f s'%(et-bt))
@@ -288,7 +320,7 @@ def spectroscopy(daq,awg,qubitLO=0,cav_resp_time=1e-6,integration_length=2e-6,AC
 
     return power_data,I_data,Q_data
 
-def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,postPulseLength=1500e-9,nAverages=128,amplitude_hd=1,
+def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,postPulseLength=1500e-9,nAverages=128,amp_q=1,
           sequence='rabi',mu=0,sigma=0,stepSize=2e-9, B0=0,tauk=0,nu=0,cav_resp_time=0.5e-6,piWidth_Y=0,AC_freq=5e-9, source=2,verbose=0,
           pipulse_position=20e-9,integration_length=2.3e-6,qubitDriveFreq=3.8135e9,pi2Width=0,rr_IF = 30e6,sampling_rate=1.2e9,
           measPeriod=300e-6,sweep=0,instance=0,active_reset=False,threshold=500e-3,white_noise_instance=[],
@@ -301,7 +333,7 @@ def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,pos
     setup[1]:                   If setup[1]=0, the right seqc programs are loaded into the QA AWG for readout
     setup[2]:                   If setup[2]=0, QA is configured
     Tmax:                       max length of drive (rabi) or pi2 pulse separation
-    amplitude_hd:               amplitude of qubit drive channel
+    amp_q:               amplitude of qubit drive channel
     sequence:                   Which experiment to perform (see description)
     pi2Width:                   Length of pi2 pulse in seconds
     instance:                   Which instance of telegraph noise to use. Used for sweeps
@@ -333,11 +365,11 @@ def pulse(daq,awg,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,prePulseLength=1500e-9,pos
                             noise_instance=noise_instance,Tmax=Tmax,phi=phi,sweep=sweep, wk=wk)
 
         if sequence == 'echo_v2':
-            create_echo_wfms(awg,fs,mu,sigma,B0,nPoints,Tmax,amplitude_hd,pi2Width,nSteps,pulse_length_increment)
+            create_echo_wfms(awg,fs,mu,sigma,B0,nPoints,Tmax,amp_q,pi2Width,nSteps,pulse_length_increment)
 
         nSteps,ct = seq_setup(awg,noise_rate=noise_rate,sequence=sequence,axis=axis,piWidth_Y=piWidth_Y,pipulse_position=pipulse_position,nSteps=nSteps,
                               nPoints=nPoints,fs=fs,pulse_length_start=pulse_length_start,pulse_length_increment=pulse_length_increment,
-                              instance=instance,amplitude_hd=amplitude_hd,nAverages=nAverages,pi2Width=pi2Width,
+                              instance=instance,amp_q=amp_q,nAverages=nAverages,pi2Width=pi2Width,
                               Tmax=Tmax,sigma=sigma,B0=B0,measPeriod=measPeriod,active_reset=active_reset)
 
     elif setup[0] == 2:
@@ -849,7 +881,7 @@ def rabi_ramsey(daq,awg,qubitLO,qubitDriveFreq=3.8e9,AC_pars=[0,0],plot=1):
     optionsRabi= {
         'nAverages':        128,
         'Tmax':             0.2e-6,
-        'amplitude_hd':     1.0,
+        'amp_q':     1.0,
         'sequence':         'rabi',
         'channel':          0,
         'measPeriod':       200e-6,
@@ -858,14 +890,14 @@ def rabi_ramsey(daq,awg,qubitLO,qubitDriveFreq=3.8e9,AC_pars=[0,0],plot=1):
         }
 
     t,ch1Data,ch2Data,nPoints = pulse(daq,awg,qubitLO,setup=[0,0,0],**optionsRabi)
-    pi_pulse,error = pf.pulse_plot1d(sequence='rabi',dt=optionsRabi['Tmax']*1e6/nPoints,qubitDriveFreq=optionsRabi['qubitDriveFreq'],amplitude_hd=optionsRabi['amplitude_hd'],x_vector=t, y_vector=ch1Data,fitting=1,AC_pars=optionsRabi['AC_pars'],plot=0)
+    pi_pulse,error = pf.pulse_plot1d(sequence='rabi',dt=optionsRabi['Tmax']*1e6/nPoints,qubitDriveFreq=optionsRabi['qubitDriveFreq'],amp_q=optionsRabi['amp_q'],x_vector=t, y_vector=ch1Data,fitting=1,AC_pars=optionsRabi['AC_pars'],plot=0)
 
     optionsRamsey = {
         'nAverages':        128,
         'Tmax':             10e-6,
         'stepSize':         100e-9,
         'pi2Width':         1/2*pi_pulse*1e-9,
-        'amplitude_hd':     optionsRabi['amplitude_hd'],
+        'amp_q':     optionsRabi['amp_q'],
         'sequence':         'ramsey',
         'channel':          0,
         'measPeriod':       200e-6,
@@ -878,7 +910,7 @@ def rabi_ramsey(daq,awg,qubitLO,qubitDriveFreq=3.8e9,AC_pars=[0,0],plot=1):
 
     t,ch1Data,ch2Data,nPoints = pulse(daq,awg,qubitLO,setup=[0,0,0],**optionsRamsey)
     # plot data
-    detuning,T_phi,error = pf.pulse_plot1d(sequence='ramsey',dt=optionsRamsey['Tmax']*1e6/nPoints,qubitDriveFreq=optionsRamsey['qubitDriveFreq'],amplitude_hd=optionsRamsey['amplitude_hd'],x_vector=t, y_vector=ch1Data,fitting=1,AC_pars=optionsRamsey['AC_pars'],pi2Width=optionsRamsey['pi2Width'],RT_pars=optionsRamsey['RT_pars'],plot=plot)
+    detuning,T_phi,error = pf.pulse_plot1d(sequence='ramsey',dt=optionsRamsey['Tmax']*1e6/nPoints,qubitDriveFreq=optionsRamsey['qubitDriveFreq'],amp_q=optionsRamsey['amp_q'],x_vector=t, y_vector=ch1Data,fitting=1,AC_pars=optionsRamsey['AC_pars'],pi2Width=optionsRamsey['pi2Width'],RT_pars=optionsRamsey['RT_pars'],plot=plot)
 
     return detuning,T_phi,error
 
@@ -936,3 +968,21 @@ def condition(x): return x > 5
 
 def line(x,a,b):
     return a*x+b
+
+def save_data(device_name,project,exp='rabi',iteration=1,par_dict={},data=[]):
+
+    dir_path = f'D:\\{project}\\{device_name}\\{exp}-data'
+    filename = f'\\{exp}'+f'_data_{iteration}.csv'
+
+    if os.path.exists(dir_path):
+        pass
+    else:
+        print(f'Directory not found; making new directory at {dir_path}')
+        os.makedirs(dir_path)
+
+    with open(dir_path+filename,"w",newline="") as datafile:
+        writer = csv.writer(datafile)
+        writer.writerow(par_dict.keys())
+        writer.writerow(par_dict.values())
+        writer.writerow(data[0,:])
+        writer.writerow(data[1,:])

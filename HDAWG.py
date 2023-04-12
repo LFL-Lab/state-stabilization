@@ -91,7 +91,7 @@ def init_wfms(awg,device_awg,nPoints,nWfs):
     enable_awg(awg,device_awg,enable=1)
 
 
-def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=100,nPointsPre=900,nPointsPost=120,
+def awg_seq(awg, fs=1.2e9, amp_q = 1,nSteps=100, nPoints=1024,pi2Width=100,nPointsPre=900,nPointsPost=120,
             measPeriod=400e-6,sequence='rabi',qubit_drive_dur=20e-6,mu=0,sigma=0,B0=0,
             Tmax=2e-6,nAverages=128,active_reset=False,axis='X'):
     """
@@ -101,7 +101,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
     Args:
         awg (class): The API class instance of the AWG.
         fs (float, optional): Sampling rate of the AWG. Defaults to 1.2e9.
-        amplitude_hd (float, optional): amplitude of pi2 pulses (ramsey) or qubit drive (rabi). Defaults to 1.
+        amp_q (float, optional): amplitude of pi2 pulses (ramsey) or qubit drive (rabi). Defaults to 1.
         nSteps (int, optional): Number of points in the sequence. Defaults to 100.
         pi2Width (int, optional): Pi/2 pulse length in units of dt=1/fs. Defaults to 100.
         nPointsPre (int, optional): Number of points in the AC pre-pulse in units of dt. Defaults to 900.
@@ -168,7 +168,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
             """)
 
         if mu != 0:
-            qubit_drive_tone = amplitude_hd*np.ones(qubit_drive_dur)
+            qubit_drive_tone = amp_q*np.ones(qubit_drive_dur)
             qubit_drive_tone = qubit_drive_tone[...,None]
             AC_stark_tone = mu*np.ones(qubit_drive_dur)
             AC_stark_tone = AC_stark_tone[...,None] # turns row vector into column vector
@@ -193,7 +193,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c0_', str(fs))
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_', str(qubit_drive_dur))
-        awg_program = awg_program.replace('_c3_', str(amplitude_hd))
+        awg_program = awg_program.replace('_c3_', str(amp_q))
         awg_program = awg_program.replace('_c4_', str(nAverages))
 
 
@@ -226,7 +226,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
 
 
         if mu != 0 or B0 != 0:
-            qubit_drive_tone = amplitude_hd*np.ones(qubit_drive_dur)
+            qubit_drive_tone = amp_q*np.ones(qubit_drive_dur)
             qubit_drive_tone = qubit_drive_tone[...,None]
             AC_stark_tone = mu*np.ones(qubit_drive_dur)
             AC_stark_tone = AC_stark_tone[...,None] # turns row vector into column vector
@@ -252,7 +252,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_',str(nAverages))
         awg_program = awg_program.replace('_c3_',str(nSteps))
-        awg_program = awg_program.replace('_c4_',str(amplitude_hd))
+        awg_program = awg_program.replace('_c4_',str(amp_q))
         awg_program = awg_program.replace('_c5_',str(nPoints))
         awg.setInt('/dev8233/triggers/out/0/source',4)
 
@@ -347,7 +347,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c0_', str(fs))
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_', str(Tmax))
-        awg_program = awg_program.replace('_c3_', str(amplitude_hd))
+        awg_program = awg_program.replace('_c3_', str(amp_q))
         awg_program = awg_program.replace('_c4_',str(pi2Width))
         awg_program = awg_program.replace('_c5_',str(nAverages))
         awg_program = awg_program.replace('_c6_',str(nSteps))
@@ -432,7 +432,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c0_', str(fs))
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_', str(Tmax))
-        awg_program = awg_program.replace('_c3_', str(amplitude_hd))
+        awg_program = awg_program.replace('_c3_', str(amp_q))
         awg_program = awg_program.replace('_c4_',str(pi2Width))
         awg_program = awg_program.replace('_c5_',str(nAverages))
         awg_program = awg_program.replace('_c6_',str(nSteps))
@@ -520,7 +520,7 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c0_', str(fs))
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_', str(Tmax))
-        awg_program = awg_program.replace('_c3_', str(amplitude_hd))
+        awg_program = awg_program.replace('_c3_', str(amp_q))
         awg_program = awg_program.replace('_c4_',str(2*pi2Width))
         awg_program = awg_program.replace('_c5_',str(nAverages))
         awg_program = awg_program.replace('_c6_',str(nSteps))
@@ -596,23 +596,27 @@ def awg_seq(awg, fs=1.2e9, amplitude_hd = 1,nSteps=100, nPoints=1024,pi2Width=10
         awg_program = awg_program.replace('_c0_', str(fs))
         awg_program = awg_program.replace('_c1_', str(measPeriod))
         awg_program = awg_program.replace('_c2_', str(1e-6))
-        awg_program = awg_program.replace('_c3_', str(amplitude_hd))
+        awg_program = awg_program.replace('_c3_', str(amp_q))
         awg_program = awg_program.replace('_c4_',str(int(pi2Width)))
         awg_program = awg_program.replace('_c5_',str(nAverages))
         awg_program = awg_program.replace('_c6_',str(mu))
         awg.setInt('/dev8233/triggers/out/0/source',4)
 
-    elif sequence == 'mixer_calib':
+    elif sequence == 'mixer-calib':
         awg_program = textwrap.dedent("""
-            const N = 96;
-            wave w_I = gauss(N,N/2,N/8);
-            wave zero_wfm = zeros(N);
+
+            const N = 1024;
+            wave w_const = _c0_*ones(N);
+            wave w_zeros = zeros(N);
 
             while (true) {
-                    playWave(1,w_I,2,zero_wfm);
-                    waitWave();
-                    }
+                playWave(1,2,w_const,1,2,w_zeros);
+                waitWave();
+                }
+
                                       """)
+
+        awg_program = awg_program.replace('_c0_', str(amp_q))
 
     create_and_compile_awg(awg, awg_program, seqr_index = 0, timeout = 10)
 
@@ -858,7 +862,7 @@ outp_offset:        offset of HDAWG waveform output in V
         daq.setInt(f'/{device}/awgs/0/outputs/{i}/modulation/mode', modula[i])
 
 
-def enable_awg(daq, device, enable = 1, single = 1, awgs = 0):
+def enable_awg(daq, device, enable = 1, single = 1, awgs = [0]):
     '''
     enable/disable AWG
 
@@ -1050,7 +1054,7 @@ def data_acquisation_cnts(daq, device, cnt = 0, time_recording = 1, timeout = 10
 # import matplotlib.pyplot as plt
 # cnt = 0
 # daq, device = create_api_sessions_hd('dev8027')
-# awg_seq(daq, device, result_length = 1, amplitude_hd = 0.1, \
+# awg_seq(daq, device, result_length = 1, amp_q = 0.1, \
 #             time_increment = 50e-6, sample_exponent = 5, time_origin_sec = 160e-6, \
 #             period_wait_sec_pulse = 400e-6, period_wait_sec_spec = 10e-6, \
 #             exp = 'T2')
@@ -1099,7 +1103,7 @@ def data_acquisation_cnts(daq, device, cnt = 0, time_recording = 1, timeout = 10
 
 # sequence = exp_str[5]
 # daq_hd, device_hd=create_api_sessions_hd('dev8138')
-# awg_seq(daq_hd, device_hd, result_length = 50, amplitude_hd = 0.5, \
+# awg_seq(daq_hd, device_hd, result_length = 50, amp_q = 0.5, \
 #             time_increment = 50e-9, sample_exponent = 0, time_origin_sec = 10e-6, \
 #             period_wait_sec_pulse = 10e-6, period_wait_sec_spec = 10e-6, \
 #             exp = sequence,trigger_type = 0, wave_dur_sec = 100e-9, n_pi_CPMG=10, seqr_index = 0, timeout = 5)

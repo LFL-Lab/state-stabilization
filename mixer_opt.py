@@ -11,7 +11,7 @@ Mixer optimization functions
 # # Import Modules
 
 import time
-import tqdm
+from tqdm import tqdm
 import plot_functions as pf
 import numpy as np
 #import USB6501 as usb
@@ -21,8 +21,9 @@ import comTablefuncs as ctfuncs
 from VISAdrivers.sa_api import *
 import collections
 from scipy import optimize
-from HDAWG import awg_seq
+from HDAWG import awg_seq,enable_awg
 from UHFQA import setup_mixer_calib
+from experiment_funcs import IQ_imbalance
 
 def get_power(sa,inst,fc=4e9,threshold=-50,config=False,plot=False,output=False):
     """
@@ -83,7 +84,7 @@ def config_sa(sa,fc,span=5e6,reference=-30):
         """
 
         sa_config_level(sa, reference) # sets sensitivity
-        sa_config_center_span(sa, freq, span) # sets center frequency
+        sa_config_center_span(sa, fc, span) # sets center frequency
         sa_initiate(sa, SA_SWEEPING, 0)
         query = sa_query_sweep_info(sa)
         sweep_length = query["sweep_length"]
@@ -187,7 +188,8 @@ def min_leak(sa,inst,device='dev8233',mode='fine',mixer='qubit',threshold=-50,f_
     if plot:
         pf.plot_mixer_opt(VoltRange1, VoltRange2, power_data,cal='LO',element=element,fc=fc)
 
-def suppr_image(sa,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_IF=50e6,channels=[0,1],sb='lsb',gen=0,plot=False):
+def suppr_image(sa,inst,device='dev8233',mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_IF=50e6,
+                channels=[0,1],sb='lsb',gen=0,plot=True):
         """
 
         DESCRIPTION:
@@ -203,7 +205,7 @@ def suppr_image(sa,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_I
             f_IF (float): The intermediate (IF) frequency of the mixer. Defaults to 50e6.
             channels (list): The AWG channel connected to the I port of the mixer you want to optimize.
             sb (str): Which sideband is the image. Default is the lower sideband ('lsb')
-            gen (int): The sine generator used for modulation.
+            gen (int): The oscillator used for modulation.
             plot (boolean): Whether or not to plot the image power as a function the parameters.
         """
 
@@ -215,52 +217,45 @@ def suppr_image(sa,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_I
         start = time.time()
         if mode == 'coarse':
             span=20e-3
-            dp = 1
-            da = 1e-3
+            dp = 10e-3
+            da = 10e-3
         elif mode == 'fine':
             span=2e-3
             dp = 0.1
             da = 0.1e-3
 
-        if str(inst) == 'awg':
-            device = 'dev8233'
-        elif str(inst) == 'daq':
-            device = 'dev2528'
-
         # get current values of phase and amplitude
-        p0 = inst.get(f'/{device}/sines/1/phaseshift')[f'{device}']['sines'][f'{gen}']['phaseshift']['value']
-        a0 = inst.get(f'/{device}/awgs/0/outputs/0/gains/0')[f'{device}']['awgs']['0']['outputs'][f'{channels[0]}']['gains'][f'{channels[1]}']['value'][0]
+        # p0 = inst.get(f'/{device}/sines/1/phaseshift')[f'{device}']['sines'][f'{gen}']['phaseshift']['value']
+        # a0 = inst.get(f'/{device}/awgs/0/outputs/0/gains/0')[f'{device}']['awgs']['0']['outputs'][f'{channels[0]}']['gains'][f'{channels[1]}']['value'][0]
+        a0 = 0
+        p0 = 0
         # generate arrays for optimization parameters based on current values of phi and a used
         phiArr = np.arange(p0-span/2,p0+span/2,dp)
         ampArr = np.arange(a0-span/2,a0+span/2,da)
 
-        imPower1 = np.zeros(len(pArr))
-        imPower2 = np.zeros(len(ampArr))
-
-        inst.enable_awg(inst,device,enable=0) # stop AWG
         # upload and run AWG sequence program
         if device == 'dev8233':
-            awg_seq(inst,sequence='mixer_calib')
+            awg_seq(inst,sequence='mixer-calib',amp_q=0.1)
 
         elif device == 'dev2528':
             setup_mixer_calib(inst)
 
-        inst.enable_awg(inst,device,enable=1)
+        enable_awg(inst,device,enable=1)
 
         L1 = len(phiArr)
         L2 = len(ampArr)
         power_data = np.zeros((L1,L2))
 
-        config_sa(sa,fc=f_LO,reference=threshold)
+        config_sa(sa,fc=f_im,reference=threshold)
 
         # Sweep individual channel voltages and find leakage
         with tqdm(total = L1*L2) as progress_bar:
             for i,amp in enumerate((ampArr)):
                 for j,phi in enumerate((phiArr)):
-                    inst.setDouble(f'/{device}/sines/1/phaseshift',phi)
-                    inst.setDouble(f'/{device}/sigouts/{channels[1]}/offset',amp)
+                    IQ_imbalance(inst, amp, phi)
                     inst.sync()
-                    power_data[i,j] = get_power(sa, inst, f_LO,threshold=threshold,plot=False,config=False)
+                    power_data[i,j] = get_power(sa, inst, fc=f_im,threshold=threshold,plot=False,config=False)
+                    progress_bar.update(1)
 
         # find index of voltage corresponding to minimum LO leakage
         argmin = np.unravel_index(np.argmin(power_data), power_data.shape)
@@ -268,21 +263,12 @@ def suppr_image(sa,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_I
         opt_phi = phiArr[argmin[0]]
         opt_amp = ampArr[argmin[1]]
         # set voltages to optimal values
-        inst.setDouble(f'/{device}/sines/1/phaseshift',opt_phi)
-        inst.setDouble(f'/{device}/sigouts/{channels[1]}/offset',opt_amp)
+        IQ_imbalance(inst, g=opt_amp, phi=opt_phi)
         inst.sync()
         print(f'optimal phi = {round(opt_phi,3)}, optimal amp = {round(1e3*opt_amp,1)}')
-
-
-        # find index of voltage corresponding to minimum LO leakage
-        min_ind1 = np.argmin(imPower1)
-        min_ind2 = np.argmin(imPower2)
 
         end = time.time()
         print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
 
         if plot:
-            pf.plot_mixer_opt(phiArr, ampArr, power_data,cal='sb',element='qubit',fc=freq)
-        # print('Ch1 Voltage (mV):%.2f\nCh2 Voltage (mV):%.2f\nOFF Power (dBm): %.1f\nON Power (dBm): %.1f'%(VoltRange1[min_ind1]*1e3,VoltRange2[min_ind2]*1e3,OFF_power,ON_power))
-
-
+            pf.plot_mixer_opt(phiArr, ampArr, power_data,cal='SB',element='qubit',fc=f_im)

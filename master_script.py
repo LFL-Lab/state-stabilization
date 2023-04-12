@@ -33,7 +33,8 @@ pi = np.pi
 '''Instruments and connection'''
 qa_id = 'dev2528'
 awg_id = 'dev8233'
-meas_device = "SCQ01"
+device_name = "WM1"
+project =  'dynamical-decoupling'
 
 # Instrument Addresses
 qubitLO_IP = "USB0::0x03EB::0xAFFF::621-03A100000-0538::0::INSTR"
@@ -54,7 +55,7 @@ readoutLO.RF_ON()
 qubitLO.set_freq(4)
 readoutLO.set_freq(7.2578)
 attn.setAttenuationStep(devID=1, step=0.1)
-attenuation = 25
+attenuation = 22
 attn.setAttenuation(devID=1, atten=attenuation)
 
 '''Initialize connection with Zurich Instruments'''
@@ -106,12 +107,12 @@ except:
     iteration_spec = 1
 
 options_spec = {
-    'frequencies':      np.arange(start=3.8,stop=3.9,step=100e-6), # frequencies are in GHz
+    'frequencies':      np.arange(start=3.7,stop=3.9,step=200e-6), # frequencies are in GHz
     'nAverages':        512,
     'setup':            True,
-    'qubit_drive_amp':     200e-3,
+    'qubit_drive_amp':     400e-3,
     'readout_drive_amp':     0.7,
-    'cav_resp_time':        0.185e-6,
+    'cav_resp_time':        0.5e-6,
     'integration_length':   2.3e-6,
     }
 
@@ -131,7 +132,7 @@ iteration_spec += 1
 
 #%% Rabi Measurement
 
-A_d = 0.148
+A_d = 0.2
 
 try:
     list_of_files = glob.glob('E:\generalized-markovian-noise\%s\Rabi\*.csv'%(meas_device))
@@ -142,14 +143,14 @@ except:
 
 options_rabi = {
     'sampling_rate':    2.4e9,
-    'qubitDriveFreq':   3.8296e9,
+    'qubitDriveFreq':   3.879e9,
     'integration_length':   2.3e-6,
-    'cav_resp_time':    0.185e-6,
-    'nAverages':        64,
+    'cav_resp_time':    0.5e-6,
+    'nAverages':        1024,
     'stepSize':         6e-9,
     'Tmax':             0.6e-6,
-    'amplitude_hd':     A_d,
-    'measPeriod':       600e-6,
+    'amp_q':     A_d,
+    'measPeriod':       300e-6,
     }
 
 
@@ -166,13 +167,7 @@ pi_pulse = np.round(1/2*fitted_pars[1])
 threshold = round(np.mean(data)*2**12)
 
 # save data
-with open("E:\\generalized-markovian-noise\\%s\\rabi\\%s_data_%03d.csv"%(meas_device,'rabi',iteration_rabi),"w",newline="") as datafile:
-    writer = csv.writer(datafile)
-    writer.writerow(options_rabi.keys())
-    writer.writerow(options_rabi.values())
-    writer.writerow(t)
-    writer.writerow(data)
-
+expf.save_data(device_name=device_name, project=project,exp='rabi',iteration=iteration_rabi,par_dict=options_rabi,data=np.stack((t,data),axis=0))
 iteration_rabi += 1
 
 #%% Single Shot Experiment
@@ -183,9 +178,8 @@ options_single_shot = {
     'pi2Width':         1/2*pi_pulse*1e-9,
     'measPeriod':       600e-6,
     'qubit_drive_amp':     A_d,
-    'cav_resp_time':        0.185e-6,
+    'cav_resp_time':        0.5e-6,
     'integration_length':   2.3e-6,
-    'mu':               options_rabi['mu'],
     'rr_IF':            30e6
     }
 
@@ -215,7 +209,7 @@ options_ramsey = {
     'postPulseLength':  0e-9,
     'integration_length':   2.3e-6,
     'cav_resp_time':    options_rabi['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'active_reset':     True,
     'threshold':        threshold,
     'measPeriod':       600e-6,
@@ -273,7 +267,7 @@ options_echo = {
     'prePulseLength':   1500e-9,
     'postPulseLength':  1500e-9,
     'cav_resp_time':    options_rabi['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'measPeriod':       600e-6,
     'active_reset':     False,
     'threshold':        threshold,
@@ -325,7 +319,7 @@ options_T1 = {
     'prePulseLength':   options_ramsey['prePulseLength'],
     'postPulseLength':   options_ramsey['postPulseLength'],
     'cav_resp_time':    options_rabi['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'measPeriod':       600e-6,
     'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
     'sweep':            0,
@@ -382,7 +376,7 @@ amp = np.linspace(0.01,0.501,51)
 Omega_Rabi = np.zeros(len(amp))
 
 for i in range(len(amp)):
-    options_rabi_sweep['amplitude_hd'] = amp[i]
+    options_rabi_sweep['amp_q'] = amp[i]
     if i == 0:
         setup = [0,1,0]
     else:
@@ -446,7 +440,7 @@ options_ramsey_mu_calibration = {
     'postPulseLength':  options_ramsey['postPulseLength'],
     'integration_length': options_ramsey['integration_length'],
     'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'active_reset':     True,
     'threshold':        threshold,
     'measPeriod':       options_rabi['measPeriod'],
@@ -524,7 +518,7 @@ options_ramsey_sigma_calibration = {
     'postPulseLength':  options_ramsey['postPulseLength'],
     'integration_length': 2.3e-6,
     'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'active_reset':     True,
     'threshold':        threshold,
     'measPeriod':       600e-6,
@@ -632,7 +626,7 @@ options_rabi_statistics = {
     'stepSize':         options_rabi['stepSize'],
     'integration_length': options_rabi['integration_length'],
     'cav_resp_time':    options_rabi['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'nSteps':           nSteps,
     'measPeriod':       options_rabi['measPeriod'],
     'qubitDriveFreq':   options_rabi['qubitDriveFreq'],
@@ -700,7 +694,7 @@ options_ramsey_statistics = {
     'stepSize':         options_ramsey['stepSize'],
     'integration_length': options_ramsey['integration_length'],
     'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'measPeriod':       options_ramsey['measPeriod'],
     'qubitDriveFreq':   options_ramsey['qubitDriveFreq'],
     'active_reset':     True,
@@ -797,7 +791,7 @@ options_markovianity_check = {
     'stepSize':         options_ramsey['stepSize'],
     'integration_length': options_ramsey['integration_length'],
     'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'measPeriod':       options_ramsey['measPeriod'],
     'qubitDriveFreq':   options_ramsey['qubitDriveFreq'],
     'active_reset':     True,
@@ -818,7 +812,7 @@ nReps = 500
 for j in range(1,13):
     data_arr = np.zeros((nReps,nSteps))
     #calibrate mixers
-    expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_markovianity_check['qubitDriveFreq'],amp=options_markovianity_check['amplitude_hd'])
+    expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_markovianity_check['qubitDriveFreq'],amp=options_markovianity_check['amp_q'])
     expf.mixer_calib(sa,awg,'fine',mixer='ac',threshold=-75,fc=options_markovianity_check['AC_freq'],amp=options_markovianity_check['mu'])
     attn.setAttenuation(devID = 1, atten = 0)
     expf.mixer_calib(sa,daq,'fine',mixer='readout',threshold=-75,fc=7.2581e9,amp=0.7)
@@ -877,7 +871,7 @@ options_echo_statistics = {
     'stepSize':         options_echo['stepSize'],
     'integration_length': 2.0e-6,
     'cav_resp_time':    options_echo['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'nSteps':           nSteps,
     'measPeriod':       200e-6,
     'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
@@ -902,7 +896,7 @@ plot = 1
 start = time.time()
 for i in range(nReps):
     t,data,nSteps = expf.pulse(daq,awg,qubitLO,setup=[1,1,1],sequence='echo',**options_echo_statistics)
-    T2_arr[i],error = pf.pulse_plot1d(sequence='echo',x_vector=t, y_vector=data,plot=plot,dt=options_echo_statistics['Tmax']*1e6/nSteps,qubitDriveFreq=options_echo_statistics['qubitDriveFreq'],amplitude_hd=options_echo_statistics['amplitude_hd'],fitting=1,AC_pars=options_echo_statistics['AC_pars'],RT_pars=options_echo_statistics['RT_pars'],pi2Width=options_echo_statistics['pi2Width'],iteration=iteration_echo_statistics)
+    T2_arr[i],error = pf.pulse_plot1d(sequence='echo',x_vector=t, y_vector=data,plot=plot,dt=options_echo_statistics['Tmax']*1e6/nSteps,qubitDriveFreq=options_echo_statistics['qubitDriveFreq'],amp_q=options_echo_statistics['amp_q'],fitting=1,AC_pars=options_echo_statistics['AC_pars'],RT_pars=options_echo_statistics['RT_pars'],pi2Width=options_echo_statistics['pi2Width'],iteration=iteration_echo_statistics)
     error_arr[i] = max(error)
     now[i] = time.time()  - start
 
@@ -927,7 +921,7 @@ ax.set_ylabel('$T_2 (\mu s)$')
 ax.set_ylim((0,2))
 
 # save data
-exp_pars = [options_echo_statistics['amplitude_hd'],options_echo_statistics['qubitDriveFreq'],options_echo_statistics['AC_pars']]
+exp_pars = [options_echo_statistics['amp_q'],options_echo_statistics['qubitDriveFreq'],options_echo_statistics['AC_pars']]
 with open("E:\\generalized-markovian-noise\\echo\\echo_statistics\\%s_data_%03d.csv"%('echo_statistics',iteration_echo_statistics),"w",newline="") as datafile:
     writer = csv.writer(datafile)
     writer.writerow(exp_pars)
@@ -956,7 +950,7 @@ options_T1_statistics = {
     'stepSize':         options_T1['stepSize'],
     'integration_length': options_T1['integration_length'],
     'cav_resp_time':    options_T1['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'nSteps':           nSteps,
     'measPeriod':       options_T1['measPeriod'],
     'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
@@ -1022,7 +1016,7 @@ options_qubitBW_meas = {
     'stepSize':         options_echo['stepSize'],
     'integration_length': options_echo['integration_length'],
     'cav_resp_time':    options_echo['cav_resp_time'],
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'measPeriod':       600e-6,
     'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
     'sweep':            0,
@@ -1049,7 +1043,7 @@ for j in range(4,5):
 
     for i in trange(nReps,desc='Iteration'):
         if i % 200 == 0:
-            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_qubitBW_meas['qubitDriveFreq'],amp=options_qubitBW_meas['amplitude_hd'])
+            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_qubitBW_meas['qubitDriveFreq'],amp=options_qubitBW_meas['amp_q'])
             expf.mixer_calib(sa,awg,'fine',mixer='ac',threshold=-75,fc=options_qubitBW_meas['AC_freq'],amp=options_qubitBW_meas['mu'])
             attn.setAttenuation(devID = 1, atten = 0)
             expf.mixer_calib(sa,daq,'fine',mixer='readout',threshold=-75,fc=7.2581e9,amp=0.7)
@@ -1173,7 +1167,7 @@ options_ramsey_par_sweep = {
     'Tmax':             3e-6,
     'stepSize':         100e-9,
     'pi2Width':         1/2*pi_pulse*1e-9,
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'cav_resp_time':    options_ramsey['cav_resp_time'],
     'measPeriod':       options_ramsey['measPeriod'],
     'qubitDriveFreq':   options_ramsey['qubitDriveFreq'],
@@ -1211,7 +1205,7 @@ for i in trange(len(B0),desc='B0 Loop'):
             n = 0 # index that keeps track of noisy measurements
             m = 0 # index that keeps track of overall measurements
             # optimize mixers
-            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_ramsey_par_sweep['qubitDriveFreq'],amp=options_ramsey_par_sweep['amplitude_hd'],config='XY')
+            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_ramsey_par_sweep['qubitDriveFreq'],amp=options_ramsey_par_sweep['amp_q'],config='XY')
             if options_ramsey_par_sweep['mu'] != 0:
                 expf.mixer_calib(sa,awg,'fine',mixer='ac',threshold=-75,fc=options_ramsey_par_sweep['AC_freq'],amp=options_ramsey_par_sweep['mu'])
             else:
@@ -1388,7 +1382,7 @@ options_echo_par_sweep = {
     'Tmax':             3e-6,
     'stepSize':         100e-9,
     'pi2Width':         1/2*pi_pulse*1e-9,
-    'amplitude_hd':     A_d,
+    'amp_q':     A_d,
     'cav_resp_time':    options_echo['cav_resp_time'],
     'measPeriod':       options_echo['measPeriod'],
     'qubitDriveFreq':   options_echo['qubitDriveFreq'],
@@ -1420,7 +1414,7 @@ for i in trange(2,len(B0),desc='B0 Loop'):
             m = 0 # index that keeps track of overall measurements
 
             # optimize mixers
-            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_echo_par_sweep['qubitDriveFreq'],amp=options_rabi['amplitude_hd'],config='echo')
+            expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_echo_par_sweep['qubitDriveFreq'],amp=options_rabi['amp_q'],config='echo')
             attn.setAttenuation(devID = 1, atten = 0)
             expf.mixer_calib(sa,daq,'fine',mixer='readout',threshold=-75,fc=7.2581e9,amp=0.7)
             attn.setAttenuation(devID = 1, atten = attenuation)

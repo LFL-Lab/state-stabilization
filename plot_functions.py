@@ -25,26 +25,28 @@ from scipy.signal import butter,lfilter,freqz,find_peaks,peak_widths
 # import imageio
 
 # set some deafault
+# plt.rcParams.update(plt.rcParamsDefault)
 # for a complete set of parameters "print(plt.rcParams)"
-sns.set_style('ticks')
-plt.rcParams['font.family'] =  'Arial'
-plt.rcParams['font.size'] = 16
-plt.rcParams['figure.dpi'] = 150
-plt.rcParams["xtick.direction"] = "in"
-plt.rcParams["ytick.direction"] = "in"
-plt.rcParams["xtick.major.top"] = True
-plt.rcParams['xtick.labelsize'] = 14
-plt.rcParams['axes.labelsize'] = 16
-plt.rcParams['axes.titlesize'] = 16
-plt.rcParams["xtick.major.bottom"] = True
-plt.rcParams["xtick.top"] = True
-plt.rcParams["xtick.bottom"] = True
-plt.rcParams["ytick.left"] = True
-plt.rcParams["ytick.right"] = True
-plt.rcParams['ytick.labelsize'] = 14
-plt.rcParams["ytick.major.right"] = True
-plt.rcParams["ytick.labelright"] = False
-plt.rcParams["ytick.minor.visible"] = False
+# sns.set_style('ticks')
+plt.style.use('science')
+# plt.rcParams['font.family'] =  'Arial'
+# plt.rcParams['font.size'] = 16
+# plt.rcParams['figure.dpi'] = 150
+# plt.rcParams["xtick.direction"] = "in"
+# plt.rcParams["ytick.direction"] = "in"
+# plt.rcParams["xtick.major.top"] = True
+# plt.rcParams['xtick.labelsize'] = 14
+# plt.rcParams['axes.labelsize'] = 16
+# plt.rcParams['axes.titlesize'] = 16
+# plt.rcParams["xtick.major.bottom"] = True
+# plt.rcParams["xtick.top"] = True
+# plt.rcParams["xtick.bottom"] = True
+# plt.rcParams["ytick.left"] = True
+# plt.rcParams["ytick.right"] = True
+# plt.rcParams['ytick.labelsize'] = 14
+# plt.rcParams["ytick.major.right"] = True
+# plt.rcParams["ytick.labelright"] = False
+# plt.rcParams["ytick.minor.visible"] = False
 
 #%% power_plot
 def power_plot(freqs,signal,power,fc):
@@ -363,7 +365,7 @@ def fit_data(x_vector,y_vector,sequence='rabi',dt=0.01,fitFunc='',verbose=0):
 
 
 #%% plot_data
-def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,amplitude_hd=1,
+def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,amp_q=1,
                               pi2Width='',nAverages=1, sampling_rate=1e9,
                               integration_length=2e-6,cav_resp_time=5e-6,stepSize=5e-6, iteration = 1,
                               Tmax=5e-6,measPeriod=5e-6,active_reset=False,
@@ -388,7 +390,7 @@ def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,amplitude_h
         ax.set_xlabel('Pulse Duration (ns)')
         ax.plot(x_vector*1e3,rabi(x_vector*1e3, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
         ax.set_title('Rabi Measurement %03d'%(iteration))
-        textstr = '$\omega_d$ = %.4f GHz\n$P_{qb}$ = %.2f mV\n$T_{\pi/2}$ = %.1f ns\n$\hat{n}$ = %d'%(qubitDriveFreq*1e-9,amplitude_hd*1e3,round(fitted_pars[1]/4,1),nAverages)
+        textstr = '$\omega_d$ = %.4f GHz\n$P_{qb}$ = %.2f mV\n$T_{\pi/2}$ = %.1f ns\n$\hat{n}$ = %d'%(qubitDriveFreq*1e-9,amp_q*1e3,round(fitted_pars[1]/4,1),nAverages)
 
     elif sequence == "ramsey":
 

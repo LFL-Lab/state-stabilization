@@ -28,10 +28,11 @@ from scipy.signal import butter,lfilter,freqz,find_peaks,peak_widths
 # plt.rcParams.update(plt.rcParamsDefault)
 # for a complete set of parameters "print(plt.rcParams)"
 # sns.set_style('ticks')
-plt.style.use('science')
+plt.style.use(['science','no-latex'])
+# plt.rcParams['text.usetex'] = False
 # plt.rcParams['font.family'] =  'Arial'
 # plt.rcParams['font.size'] = 16
-# plt.rcParams['figure.dpi'] = 150
+plt.rcParams['figure.dpi'] = 150
 # plt.rcParams["xtick.direction"] = "in"
 # plt.rcParams["ytick.direction"] = "in"
 # plt.rcParams["xtick.major.top"] = True

@@ -4,29 +4,28 @@ Created on Thu Apr 14 11:35:33 2022
 @author: Evangelos Vlachos <evlachos@usc.edu>
 """
 
-from tqdm import trange
-import gc
+from tqdm import trange #for progress bars
+import gc  #garbage collector
 import time
 import importlib.util
 import json
 import sys, os
-import VISAdrivers.LO845 as LO
-from VISAdrivers.LabBrick_LMS_Wrapper import LabBrick_Synthesizer
-from VISAdrivers.vaunix_attenuator_wrapper import VaunixAttenuator
-from VISAdrivers.sa_api import *
+import VISAdrivers.LO845 as LO #Driver for Berkeley Nucleonics RF generator
+from VISAdrivers.LabBrick_LMS_Wrapper import LabBrick_Synthesizer #Driver for Vaunix RF generator
+from VISAdrivers.vaunix_attenuator_wrapper import VaunixAttenuator #Driver for Vaunix attenuator
+from VISAdrivers.sa_api import * #Driver for SignalCore Spectrum Analyzer
 import numpy as np
-import UHFQA as qa
-import HDAWG as hd
-import experiment_funcs as expf
+import UHFQA as qa # AWG driver
+import HDAWG as hd # QA driver
+import experiment_funcs as expf #library containing all the functions used in experiments with Zurich Insts
 import matplotlib.pyplot as plt
 import csv
 import glob
 import scipy as scy
 import plot_functions as pf
 import pandas as pd
-import zhinst.toolkit as zt
+import zhinst.toolkit as zt # package for zurich instruments
 
-plt.rcParams['figure.dpi'] = 150
 pi = np.pi
 
 #%% Instrumentation setup

@@ -216,7 +216,7 @@ def suppr_image(sa,inst,device='dev8233',mode='fine',mixer='qubit',threshold=-50
 
         start = time.time()
         if mode == 'coarse':
-            span=20e-3
+            span=100e-3
             dp = 10e-3
             da = 10e-3
         elif mode == 'fine':

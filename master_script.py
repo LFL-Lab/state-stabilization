@@ -25,6 +25,7 @@ import scipy as scy
 import plot_functions as pf
 import pandas as pd
 import zhinst.toolkit as zt # package for zurich instruments
+import mixer_opt # functions for mixer optimization
 
 pi = np.pi
 

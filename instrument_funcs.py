@@ -58,23 +58,22 @@ def get_attenuation():
     return attn.getValue('Attenuation')
 
 def init_sa():
-    sa = sa_open_device()["handle"]
-    sa_config_acquisition(device = sa, detector = SA_AVERAGE, scale = SA_LOG_SCALE)
-    sa_config_gain_atten(sa, SA_AUTO_ATTEN, SA_AUTO_GAIN, True)
-    sa_config_sweep_coupling(device = sa, rbw = 1e2, vbw = 1e2, reject=0)
+    sa = client.connectToInstrument('SignalHound SpectrumAnalyzer', dict(name='20234179', startup = 'Get config'))
+    sa.startInstrument()
+    sa.setValue('Span',2e6)
+    sa.setValue('Bandwidth',1e2)
+    sa.setValue('Threshold',-20)
+    # sa = sa_open_device()["handle"]
+    # sa_config_acquisition(device = sa, detector = SA_AVERAGE, scale = SA_LOG_SCALE)
+    # sa_config_gain_atten(sa, SA_AUTO_ATTEN, SA_AUTO_GAIN, True)
+    # sa_config_sweep_coupling(device = sa, rbw = 1e2, vbw = 1e2, reject=0)
 
     return sa
+
 # initialize Keithley
 # SC = client.connectToInstrument('Keithley 2400 SourceMeter',dict(interface='GPIB',address='24'))
 # SC.startInstrument()
 
-# try:
-#     sa
-# except NameError:
-#     sa = init_sa()
-
 if __name__ == '__main__':
     # initialize spectrum analyzer
-    sa = init_sa()
-else:
     pass

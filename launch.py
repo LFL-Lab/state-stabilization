@@ -19,8 +19,7 @@ from VISAdrivers.LabBrick_LMS_Wrapper import LabBrick_Synthesizer
 from VISAdrivers.vaunix_attenuator_wrapper import VaunixAttenuator
 from VISAdrivers.sa_api import *
 import numpy as np
-import UHFQA as qa
-import HDAWG as hd
+from zhinst.utils import create_api_session
 import experiment_funcs as expf
 import matplotlib.pyplot as plt
 import csv
@@ -60,16 +59,6 @@ attenuation = 22
 attn.setAttenuation(devID=1, atten=attenuation)
 
 '''Initialize connection with Zurich Instruments'''
-daq, device_qa = qa.create_api_sessions_uhf('dev2528', use_discovery= 1, ip='127.0.0.1')
-awg, device_awg = hd.create_api_sessions_hd('dev8233', use_discovery= 1, ip = '127.0.0.1')
-
-# set clocks to 10 MHz reference, turns on outputs,sets the range of the outputs
-awg.setInt('/dev8233/sigouts/0/on', 1)
-awg.setDouble('/dev8233/sigouts/0/range', 2)
-awg.setInt('/dev8233/sigouts/1/on', 1)
-awg.setDouble('/dev8233/sigouts/1/range', 2)
-daq.setInt('/dev2528/sigouts/0/on', 1)
-daq.setInt('/dev2528/sigouts/1/on', 1)
-daq.setInt('/dev2528/system/extclk', 1)
-awg.setInt('/dev8233/system/clocks/referenceclock/source', 1)
+daq, device_qa = create_api_sessions_uhf('dev2528', use_discovery= 1, ip='127.0.0.1')
+awg, device_awg = create_api_sessions_hd('dev8233', use_discovery= 1, ip = '127.0.0.1')
 

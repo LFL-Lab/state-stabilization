@@ -16,6 +16,7 @@ import numpy as np
 from VISAdrivers.sa_api import *
 import instrument_funcs as instfuncs
 from zhinst.utils import create_api_session,convert_awg_waveform
+from zhinst.toolkit import Session,CommandTable,Sequence,Waveforms
 
 device_name = "WM1"
 project =  'dynamical-decoupling'
@@ -24,11 +25,16 @@ class qubit():
     
     #%% INITIALIZATION
     default_pars = {
+                    "sequence":                     'rabi',
+                    "Tmax":                         10e-6,
+                    'active_reset':                 False,
                     "qubit_LO":                     3.829e9,
                     "qubit_freq":                   3.879e9,
                     "qubit_IF":                     50e6,
                     "qubit_mixer_offsets":          [0,0], # I,Q
                     "qubit_mixer_imbalance":        [0,0], # gain,phase
+                    "satur_dur":                    20e-6,
+                    
                     "pi_len":                       48, # needs to be multiple of 4
                     "pi_half_len":                  48, # needs to be multiple of 4
                     "pi_half_amp":                  0.2,
@@ -217,7 +223,7 @@ class qubit():
         self.awg.setDouble('/dev8233/sigouts/0/range', 0.6)
         self.awg.setDouble('/dev8233/sigouts/1/range', 0.6)
 
-    def seq_setup(self,sequence='rabi',nAverages=128,nPoints=1024,pulse_length_start=32,
+    def awg_setup(self,seq_pars,nAverages=128,nPoints=1024,pulse_length_start=32,
                   fs=2.4e9,nSteps=100,pulse_length_increment=16,Tmax=0.3e-6,amp_q=1,sigma=0,pi2Width=0,piWidth_Y=0,
                   pipulse_position=20e-9,measPeriod=200e-6,instance=0,B0=0,active_reset=False,axis='X',noise_rate=1,qb_IF=50e6):
         """
@@ -253,22 +259,16 @@ class qubit():
         """
         fs_base = 2.4e9
 
-        self.awg.setDouble('/dev8233/oscs/0/freq', qb_IF) # set the IF frequency of the modulator
-        # Generate and compile program
-        print('-------------Setting AWG sequence-------------')
-        bt = time.time()
-        self.awg.setInt('/dev8233/awgs/0/time',(int(fs_base/fs-1))) # set sampling rate of AWG
-        self.awg_seq(sigma=sigma,B0=B0,axis=axis,fs=fs,nSteps=nSteps,nPoints=nPoints,
-                   pi2Width=pi2Width, Tmax=Tmax,amp_q=amp_q,nAverages=nAverages,
-                   sequence=sequence,measPeriod=measPeriod,active_reset=active_reset)
-        et = time.time()
-        print('HDAWG compilation duration: %.1f s'%(et-bt))
-
-        if sequence == 'echo_v2':
-            ct = {}
-        else:
-            # create and upload command table
-            ct=ctfuncs.ct_pulse_length(n_wave=nSteps, pulse_length_start=pulse_length_start, pulse_length_increment=pulse_length_increment,
+        # set the IF frequency of the modulator
+        # Initialize sequence class
+        self.sequence = Sequence()
+        # setup sequence code
+        self.sequence.code = self.gen_seq_code()
+        # setup constants
+        self.setup_seq_pars(seq_pars)
+        # setup waveforms
+        self.setup_waveforms()
+            ct = self.make_ct(n_wave=nSteps, pulse_length_start=pulse_length_start, pulse_length_increment=pulse_length_increment,
                                        pipulse=2*pi2Width,active_reset=active_reset,sequence=sequence,noise_rate=noise_rate)
             self.awg.setVector("/dev8233/awgs/0/commandtable/data", json.dumps(ct))
 
@@ -391,7 +391,7 @@ class qubit():
 
         return power_data,I_data,Q_data
 
-    def pulse(self,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,nAverages=128,amp_q=1,
+    def pulse_exp(self,setup=[0,0,0],Tmax=0.3e-6,nSteps=61,nAverages=128,amp_q=1,
               sequence='rabi',stepSize=2e-9, source=2,verbose=0,
               fs=1.2e9,active_reset=False,threshold=500e-3):
 
@@ -422,15 +422,17 @@ class qubit():
         self.enable_awg(self.awg,'dev8233',enable=0,awgs=cores)
         self.enable_awg(self.qa, 'dev2528',enable=0)
         self.qa_result_reset()
+        
+        self.pars['sequence'] = sequence
 
         if setup[0] == 0:
-
-            nPoints,nSteps,pulse_length_increment,pulse_length_start = self.calc_nSteps(sequence=sequence,fsAWG=fs,
+            self.awg.setDouble('/dev8233/oscs/0/freq', self.pars['qb_IF']) 
+            nPoints,nSteps,pulse_length_increment,pulse_length_start = self.calc_steps(fsAWG=fs,
                                                                                    stepSize=stepSize,Tmax=Tmax,verbose=verbose)
 
-            self.create_wfms(sequence=sequence, nPoints=nPoints, Tmax=Tmax)
+            # self.create_wfms(sequence=sequence, nPoints=nPoints, Tmax=Tmax)
 
-            nSteps,ct = self.seq_setup(sequence=sequence,axis=axis,piWidth_Y=piWidth_Y,pipulse_position=pipulse_position,nSteps=nSteps,
+            nSteps,ct = self.awg_setup(sequence=sequence,axis=axis,piWidth_Y=piWidth_Y,pipulse_position=pipulse_position,nSteps=nSteps,
                                   nPoints=nPoints,fs=fs,pulse_length_start=pulse_length_start,pulse_length_increment=pulse_length_increment,
                                   instance=instance,amp_q=amp_q,nAverages=nAverages,pi2Width=pi2Width,
                                   Tmax=Tmax,sigma=sigma,B0=B0,measPeriod=measPeriod,active_reset=active_reset)
@@ -809,236 +811,198 @@ class qubit():
 
 
     
+    def gen_seq_code(self):
+        
+        if self.sequence = 'spectroscopy':
+            code = self.spec_sequence()
+        elif self.sequence = 'rabi':
+            code = self.rabi_sequence()
+        elif self.sequence = 'T1':
+            code = self.T1_sequence()
+        elif self.sequence = 'ramsey':
+            code = self.ramsey_sequence()
+        elif self.sequence = 'echo':
+            code = self.echo_sequence()
+        elif self.sequence = 'single_shot':
+            code = self.single_shot_sequence()
+        
+        return code    
     
-    def spectroscopy_sequence(self,amp_q=0.1,qb_drive_dur=20e-6,nAverages=1000):
+    def setup_seq_pars(self,**pars):
+        
+        for key,value in pars:
+            self.sequence.constants[key] = value
+     
+    def setup_waveforms(self):
+        
+        nPoints = self.roundToBase(self.pars['Tmax']*self.pars['fsAWG'])
+        waveforms = Waveforms()
+        
+        if self.sequence = 'spectroscopy':
+            
+            qubit_drive_dur = self.roundToBase(self.pars['satur_dur']*self.pars['fsAWG']
+            gauss = gaussian(qubit_drive_dur,qubit_drive_dur/4)
+            self.sequence.waveforms[0] = (Wave(gauss,name='w_gauss'),output=OutputType.OUT1)
+            
+        elif self.sequence = 'rabi':
+            
+            N = self.pars['gauss_len']
+            gauss_pulse = gaussian(N,N/5)
+            
+            self.sequence.waveforms[0] = (Wave(gauss_pulse[:N/2], name="w_gauss_rise_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(int(N/2), name="w_zero1", output=OutputType.OUT1|OutputType.OUT2))
+                
+            self.sequence.waveforms[1] = (Wave(gauss_pulse[N/2:], name="w_gauss_fall_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(int(N/2)), name="w_zero2", output=OutputType.OUT1|OutputType.OUT2))
+            
+            self.sequence.waveforms[2] = (Wave(np.ones(nPoints), name="w_const_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(nPoints), name="w_const_Q", output=OutputType.OUT1|OutputType.OUT2))
+            
+        elif self.sequence = 'T1':
+            
+            N = self.pars['pi_len']
+            pi_pulse = self.pars['pi_amp']*gaussian(N,N/5)
+            
+            self.sequence.waveforms[0] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        elif self.sequence = 'ramsey':
+            N = self.pars['pi_len']
+            pi2_pulse = self.amp['pi_half_amp'] * gaussian(N,N/5)
+            self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+            self.sequence.waveforms[1] = (Wave(np.zeros(nPoints), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(nPoints), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+            
+        elif self.sequence = 'echo':
+            N = self.pars['pi_len']
+            pi2_pulse = self.amp['pi_half_amp'] * gaussian(N,N/5)
+            pi_pulse = self.pars['pi_amp']*gaussian(N,N/5)
+            
+            self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+            self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+            self.sequence.waveforms[2] = (Wave(np.zeros(nPoints), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(nPoints), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+            
+        elif self.sequence = 'single_shot' or self.active_reset = True:
+            N = self.pars['pi_len']
+            pi_pulse = self.pars['pi_amp']*gaussian(N,N/5)
+            
+            self.sequence.waveforms[1] = (Wave(pi2_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+            
+            
+    def spec_sequence(self):
 
-        awg_program = textwrap.dedent("""
-        const f_s = _c0_;
-        const f_c = 2.4e9;      // clock rate
-        const f_seq = f_c/8;     // sequencer instruction rate
-        const measInt_fs = 1.17e6; // sampling rate during passive reset period
-        const dt = 1/f_seq;
-        const trig_interval = _c1_; // one cycle
-        const period_wait_sample = floor(_c1_*measInt_fs);
-        const wave_dur_sample  = _c2_;
-        wave w = _c3_*ones(wave_dur_sample);
-
-        wave w_marker = 2*marker(256,1);
+        awg_program = '''       
 
         // Beginning of the core sequencer program executed on the HDAWG at run time
+        wave w_marker = 2*marker(512,1);
+        var i;
 
-
-        repeat(_c4_) {
+        repeat(n_avg) {
             // OFF Measurement
-            playZero(wave_dur_sample,AWG_RATE_600MHZ);
+            playZero(qubit_drive_dur,AWG_RATE_600MHZ);
             playWave(1,w_marker);
             playZero(period_wait_sample,AWG_RATE_1P2MHZ);
             // ON measurement
-            playWave(1,w);
+            playWave(1,w_gauss);
             playWave(1,w_marker);
             playZero(period_wait_sample,AWG_RATE_1P2MHZ);
-                    }
-            """)
+                    }'''
 
-        awg_program = awg_program.replace('_c0_', str(self.pars['fs']))
-        awg_program = awg_program.replace('_c1_', str(self.pars['measPeriod']))
-        awg_program = awg_program.replace('_c2_', str(qb_drive_dur))
-        awg_program = awg_program.replace('_c3_', str(amp_q))
-        awg_program = awg_program.replace('_c4_', str(nAverages))
-        
         return awg_program
 
-    def rabi_sequence(self, nAverages=1000,nSteps=100):
-        awg_program = textwrap.dedent(
-        """
-        const f_s = _c0_;
-        const f_c = 2.4e9;      // clock rate
-        const measInt_fs = 1.17e6; // sampling rate during passive reset period
-        const f_seq = f_c/8;     // sequencer instruction rate
-        const dt = 1/f_seq;
-        const trigger_interval= _c1_; // one meas cycle in sec
-        const period_wait_sample = floor(_c1_*measInt_fs);
-        var i=0;
+    def rabi_sequence(self):
         
-        // create marker wfm
-        wave w_marker = 2*marker(256,1);
-        // create qubit drive waveform
-        wave gaussian_drive = "drive_pulse";
-        assignWaveIndex(gaussian_drive,0);
+        awg_program =   
+        '''// Beginning of the core sequencer program executed on the HDAWG at run time
+        wave w_marker = 2*marker(512,1);
+        var i;
 
-        //_add_white_noise_
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(_c2_){
-            for (i=0; i<_c3_; i++) {
+        repeat(n_avg){
+            for (i=0; i<n_steps; i++) {
+                    playWave(1,2,w_gauss_rise_I,1,2,w_zero1);
                     executeTableEntry(i);
+                    playWave(1,2,w_gauss_fall_I,1,2,w_zero2);
                     playWave(1,w_marker);
                     playZero(period_wait_sample,AWG_RATE_1P2MHZ);
           }
-        }
-        """)
+        }'''
 
-        awg_program = awg_program.replace('_c0_', str(self.pars['fs']))
-        awg_program = awg_program.replace('_c1_', str(self.pars['measPeriod']))
-        awg_program = awg_program.replace('_c2_',str(nAverages))
-        awg_program = awg_program.replace('_c3_',str(nSteps))
 
-        self.create_and_compile_awg(self.awg, 'dev8233', awg_program, seqr_index = 0, timeout = 10)
+        # self.create_and_compile_awg(self.awg, 'dev8233', awg_program, seqr_index = 0, timeout = 10)
         
         return awg_program
     
-    def T1_sequence(self,nAverages=1000,nSteps=100,active_reset=0):
-        awg_program = textwrap.dedent("""
-        const f_s = _c0_;
-        const f_c = 2.4e9;      // clock rate
-        const f_seq = f_c/8;     // sequencer instruction rate
-        const measInt_fs = 1.17e6; // sampling rate during passive reset period
-        const dt = 1/f_seq;
-        const trigger_interval= _c1_; // one meas cycle in sec
-        const period_wait_sample = floor(_c1_*measInt_fs);
+    def T1_sequence(self,active_reset=0):
+        awg_program = 
+        '''// Beginning of the core sequencer program executed on the HDAWG at run time
+        wave w_marker = 2*marker(512,1);
         var i;
 
-        // create marker wfm
-        wave w_marker = 2*marker(256,1);
-        // create waveform to be played after pipulse
-        wave arb_wfm = "free_evol_wfm";
-        assignWaveIndex(arb_wfm,0);
-        // create pipulse wfm
-        wave pi_pulse = "pi_pulse";
-        assignWaveIndex(pi_pulse,1);
-        
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-
-        repeat(_c2_){
-            for (i=1; i<_c3_+1; i++) {
-                    executeTableEntry(0);
-                    executeTableEntry(i);
+        repeat(n_avg){
+            for (i=0; i<n_steps; i++) {
+                    playWave(1,2,w_pi_I,1,2,w_pi_Q);
                     playWave(1,w_marker);
                     playZero(period_wait_sample,AWG_RATE_1P2MHZ);
-                        }
-
           }
-
-        """)
-
-        awg_program = awg_program.replace('_c0_', str(self.pars['fs']))
-        awg_program = awg_program.replace('_c1_', str(self.pars['measPeriod']))
-        awg_program = awg_program.replace('_c2_',str(nAverages))
-        awg_program = awg_program.replace('_c3_',str(nSteps))
+        }'''
+        
 
         return awg_program
     
     def ramsey_sequence(self,nAverages=1000,nSteps=100,active_reset=0):
         
-        awg_program = textwrap.dedent("""
-            // Define experimental variables
-            const f_s = _c0_;
-            const f_c = 2.4e9;      // clock rate
-            const measInt_fs = 1.17e6; // sampling rate during passive reset period
-            const f_seq = f_c/8;     // sequencer instruction rate
-            const dt = 1/f_seq;         // one clock cycle in sec
-            const trigger_interval= _c1_; // one meas cycle in sec
-            const period_wait_sample = floor(_c1_*measInt_fs);
+        awg_program = 
+            '''
+            // Beginning of the core sequencer program executed on the HDAWG at run time
+            wave w_marker = 2*marker(512,1);
             var i;
 
-            // create marker wfm
-            wave w_marker = 2*marker(256,1);
-            // create waveform to be played between pi2pulses
-            wave arb_wfm = "free_evol_wfm";
-            assignWaveIndex(arb_wfm,0);
-            // create pi2pulse wfm
-            wave pi2_pulse = "pi2_pulse";
-            assignWaveIndex(pi2_pulse,1);
-
-            //_active_reset_pulses_
-            // Beginning of the core sequencer program executed on the HDAWG at run time
-              repeat(_c2_) {
-                for (i=1; i<_c3_+1; i++) {
-                        executeTableEntry(0);
+            repeat(n_avg){
+                for (i=0; i<n_steps; i++) {
+                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
                         executeTableEntry(i);
-                        executeTableEntry(0);
+                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
                         playWave(1,w_marker);
                         playZero(period_wait_sample,AWG_RATE_1P2MHZ);
-                        //_active_reset_
-            }
-            }
-            """)
+              }
+            }'''
 
-        awg_program = awg_program.replace('_c0_', str(self.pars['fs']))
-        awg_program = awg_program.replace('_c1_', str(self.pars['measPeriod']))
-        awg_program = awg_program.replace('_c2_',str(nAverages))
-        awg_program = awg_program.replace('_c3_',str(nSteps))
 
         return awg_program
 
     def echo_sequence(self,nAverages=1000,nSteps=100,active_reset=0):
-        awg_program = textwrap.dedent("""
-        // Define experimental variables
-        const f_s = _c0_;
-        const f_c = 2.4e9;      // clock rate
-        const f_seq = f_c/8;     // sequencer instruction rate
-        const measInt_fs = 1.17e6; // sampling rate during passive reset period
-        const dt = 1/f_seq;        // one clock cycle in sec
-        const trigger_interval= _c1_; // one meas cycle in sec
-        const period_wait_sample = floor(_c1_*measInt_fs);
+
+        awg_program = '''
+        // Beginning of the core sequencer program executed on the HDAWG at run time
+        wave w_marker = 2*marker(512,1);
         var i;
 
-        // create marker wfm
-        wave w_marker = 2*marker(256,1);
-        // create waveform to be played between pi2pulse and pipulse
-        wave arb_wfm = "free_evol_wfm";
-        assignWaveIndex(arb_wfm,0);
-        // create pi2pulse wfm
-        wave pi2_pulse = "pi2_pulse";
-        assignWaveIndex(pi2_pulse,1);
-        // create pipulse wfm
-        wave pi_pulse = "pi_pulse";
-        assignWaveIndex(pi_pulse,2);
-
-        //_add_white_noise_
-
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(_c2_){
-            for (i=1; i<_c3_+1; i++) {
-                executeTableEntry(0);
-                executeTableEntry(i);
-                executeTableEntry(1);
-                executeTableEntry(i);
-                executeTableEntry(0);
-                playWave(1,w_marker);
-                playZero(period_wait_sample,AWG_RATE_1P2MHZ);
-                //_active_reset_
-                }
-
-         }
-         """)
-         
-        awg_program = awg_program.replace('_c0_', str(self.pars['fs']))
-        awg_program = awg_program.replace('_c1_', str(self.pars['measPeriod']))
-        awg_program = awg_program.replace('_c2_',str(nAverages))
-        awg_program = awg_program.replace('_c3_',str(nSteps))
+        repeat(n_avg){
+            for (i=0; i<n_steps; i++) {
+                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                    executeTableEntry(i);
+                    playWave(1,2,w_pi_I,1,2,w_pi_Q);
+                    executeTableEntry(i);
+                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                    playWave(1,w_marker);
+                    playZero(period_wait_sample,AWG_RATE_1P2MHZ);
+          }
+        }'''
 
         return awg_program
     
     def single_shot_sequence(self):
-        awg_program = textwrap.dedent("""
-        const f_s = _c0_;
-        const f_c = 2.4e9;      // clock rate
-        const f_seq = f_c/8;     // sequencer instruction rate
-        const measInt_fs = 1.17e6; // sampling rate during passive reset period
-        const dt = 1/f_seq;
-        const trigger_interval= _c1_; // one meas cycle in sec
-        const tmax  = _c2_;    // max waiting time
-        const period_wait_sample = floor(_c1_*measInt_fs);
-        const N  = floor(_c2_*f_s);
-        var i=0;
-
-        wave w_marker = 2*marker(512,1);
-        wave pi2pulse = _c3_*ones(_c4_);
-        wave pipulse = _c3_*ones(2*_c4_);
-        _add_white_noise_
+        awg_program =
+        '''
         // Beginning of the core sequencer program executed on the HDAWG at run time
-
-        repeat(_c5_) {
+        wave w_marker = 2*marker(512,1);
+        
+        repeat(n_shots) {
             // OFF Measurement
             playZero(N,AWG_RATE_600MHZ);
             playWave(1,w_marker);
@@ -1053,7 +1017,7 @@ class qubit():
                 //}
             //playZero(32,AWG_RATE_2P34MHZ);
             // ON measurement
-            playWave(1,pipulse);
+            playWave(1,2,w_pi_I,1,2,w_pi_Q);
             playWave(1,w_marker);
             playZero(period_wait_sample,AWG_RATE_1P2MHZ);
             //waitDigTrigger(1);
@@ -1065,25 +1029,16 @@ class qubit():
               //  playWave(1,pi_pulse,2,AC_tone);
                 //}
             //playZero(32,AWG_RATE_2P34MHZ);
-}
-
-        """)
-
-        awg_program = awg_program.replace('_c0_', str(fs))
-        awg_program = awg_program.replace('_c1_', str(measPeriod))
-        awg_program = awg_program.replace('_c2_', str(1e-6))
-        awg_program = awg_program.replace('_c3_', str(amp_q))
-        awg_program = awg_program.replace('_c4_',str(int(pi2Width)))
-        awg_program = awg_program.replace('_c5_',str(nAverages))
+            }'''
 
         return awg_program
     
-    def mixer_calib_sequence(self,amp_q=0.1):
+    def mixer_calib_sequence(self):
 
         awg_program = textwrap.dedent("""
 
             const N = 1024;
-            wave w_const = _c0_*ones(N);
+            wave w_const = amp*ones(N);
             wave w_zeros = zeros(N);
 
             while (true) {
@@ -1092,28 +1047,21 @@ class qubit():
                 }
                                       """)
 
-        awg_program = awg_program.replace('_c0_', str(amp_q))
-        
-        self.create_and_compile_awg(self.awg, 'dev8233', awg_program, seqr_index = 0, timeout = 10)
-        
         return awg_program
     
-    def discrimination_sequence(self):
+    def reset_sequence(self):
 
-        awg_program = ('''
+        awg_program = '''
             waitDigTrigger(1);
             wait(1);
             wait(2000);
-            //playZero(256,AWG_RATE_37P5MHZ);
             if (getDigTrigger(2) == 0) {
-                //playZero(32);
                 wait(10);
             } else {
-                _apply_reset_
+                playWave(1,2,w_pi_I,1,2,w_pi_Q);
                 }
-            //playZero(302,AWG_RATE_9P4MHZ);
             wait(10000);
-          ''')
+          '''
           
         return awg_program
          
@@ -1202,7 +1150,7 @@ class qubit():
         self.qa.setInt('/dev2528/qas/0/result/mode',0) # cyclic averaging
         self.qa.sync()
         
-    def calc_nSteps(self,sequence='ramsey',fsAWG=1.2e9,stepSize=10e-9,Tmax=5e-6,verbose=1):
+    def calc_steps(self,sequence='ramsey',fsAWG=1.2e9,stepSize=10e-9,Tmax=5e-6,verbose=1):
         """
         Calculates the number of steps in the sequence and number of points in the waveform used in the experiment. The final stepsize of the sequence
         might be different than the one specified due to the fact that the AWG has a granularity of the waveform is 16 samples.
@@ -1707,10 +1655,15 @@ class qubit():
     #%% command_table_funcs
     # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
 
-    def ct_pulse_length(self,n_wave=10, pulse_length_start = 32, pulse_length_increment = 16,
-                        sequence='rabi',pipulse=50,active_reset=False,noise_rate=0):
+    def make_ct(self,sequence,n_steps=100,n_points=1000, active_reset = False, pulse_length_start = 32, pulse_length_increment = 16):
+        
+        self.ct = self.init_ct()
+        
+        self.ct = self.ct_sweep_length(n_steps,pulse_length_start,pulse_length_increment)
+        
+        
+    def ct_sweep_length(self,n_steps,pulse_length_start,pulse_length_increment):
 
-        ct = {'header': {'version':'1.2'}, 'table':[]}
         # make entries for pi2 and pi pulses
         if sequence == 'ramsey':
             ct = self.make_entry(ct,wfm_index = 0,length=self.pars['pi_len'],amp_ch1=1/2*self.pars['pi_amp'],amp_ch2=1/2*self.pars['pi_amp'])
@@ -1720,11 +1673,11 @@ class qubit():
             for i in range(n_wave-1):
                 wfm_length = pulse_length_start + (i+2) * pulse_length_increment
                 ct = make_entry(ct,wfm_index=0,entry_index=i,length=wfm_length)
-        if sequence == 'rabi':
-            ct = self.make_entry(ct,wfm_index=0,entry_index=0,length=self.pars['gauss_len']/2)
+        if self.pars['sequence'] == 'rabi':
             for i in range(n_wave):
                 wfm_length = pulse_length_start + i * pulse_length_increment
                 ct = self.make_entry(ct=ct,wfm_index=0,entry_index=i,length=wfm_length)
+            
 
         # make pre and post pulses in the case of AC stark noise added to the system
         # if sequence != 'rabi':
@@ -1775,7 +1728,13 @@ class qubit():
         ct['table'].append(entry)
         return ct
 
-
+    def init_ct(self):
+        
+        # ct = {'header': {'version':'1.2'}, 'table':[]}
+        ct_schema = awg_node.commandtable.load_validation_schema()
+        ct = CommandTable(ct_schema)
+        return ct
+    
     def make_entry(self,ct,wfm_index=0,entry_index=0,length=16,amp_ch1=1,amp_ch2=1,ssb=True):
         
         if ssb:
@@ -2060,7 +2019,9 @@ class qubit():
 
     #%% utilities
     def inst_init(self):
-
+        
+        self.session = Session('localhost')
+        self.awg_core = session.connect_device('DEV8233').awgs[0]
         self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
         self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
         
@@ -2081,89 +2042,95 @@ class qubit():
         '''
         inst.syncSetInt(f'/{device}/awgs/0/enable', enable)
         
-    def create_and_compile_awg(self,inst,device_id, awg_program, seqr_index= 0, timeout=1,verbose=0):
-        """
-        Compiles and uploads the sequence file into the AWG
+    def create_and_compile_awg(self,inst,device_id,sequence):
+        
+        with self.awg_core.set_transaction():
+            self.awg_core.load_sequencer_program(sequence)
+            self.awg_core.write_to_waveform_memory(sequence.waveforms)
+            
+    # def create_and_compile_awg(self,inst,device_id, awg_program, seqr_index= 0, timeout=1,verbose=0):
+    #     """
+    #     Compiles and uploads the sequence file into the AWG
 
-        Args:
-            inst: instrument to set awg sequence file to (awg or qa)
-            awg_program (string): Sequence file.
-            seqr_index (int, optional): Which AWG to upload the sequence file to. Defaults to 0.
-            timeout (float, optional): How long to wait for sequence file upload before time out. Defaults to 1.
-            verbose (TYPE, optional): DESCRIPTION. Defaults to 0.
+    #     Args:
+    #         inst: instrument to set awg sequence file to (awg or qa)
+    #         awg_program (string): Sequence file.
+    #         seqr_index (int, optional): Which AWG to upload the sequence file to. Defaults to 0.
+    #         timeout (float, optional): How long to wait for sequence file upload before time out. Defaults to 1.
+    #         verbose (TYPE, optional): DESCRIPTION. Defaults to 0.
 
-        Raises:
-            Exception: DESCRIPTION.
+    #     Raises:
+    #         Exception: DESCRIPTION.
 
-        Returns:
-            None.
+    #     Returns:
+    #         None.
 
-        """
+    #     """
 
-        awgModule = inst.awgModule()
-        awgModule.set('device', device_id)
-        awgModule.set('index', seqr_index)
-        awgModule.execute()
-        """Compile and upload awg_program as .elf file"""
-        if verbose==0:
-            # print("Starting compilation.")
-            awgModule.set('compiler/sourcestring', awg_program)
-            compilerStatus = -1
-            while compilerStatus == -1:
-                compilerStatus = awgModule.getInt('compiler/status')
-                time.sleep(0.1)
-            compilerStatusString = awgModule.getString('compiler/statusstring')
-            # print(f"Compiler messages:\n--------------\n{compilerStatusString}\n--------------")
-            if compilerStatus == 1: # compilation failed
-                print(awg_program)
-                raise Exception("Compilation failed.")
-            # if compilerStatus == 0:
-            #     print("Compilation successful with no warnings.")
-            # if compilerStatus == 2:
-            #     print("Compilation successful with warnings.")
-            # print("Waiting for the upload to the instrument.")
-            elfProgress = 0
-            elfStatus = 0
-            lastElfProgressPrc = None
-            while (elfProgress < 1.0) and (elfStatus != 1):
-                elfProgress = awgModule.getDouble('progress')
-                elfStatus = awgModule.getInt('elf/status')
-                elfProgressPrc = round(elfProgress * 100);
-                if elfProgressPrc != lastElfProgressPrc:
-                    # print(f'Upload progress: {elfProgressPrc:2.0f}%')
-                    lastElfProgressPrc = elfProgressPrc
-                time.sleep(0.1)
-        else:
-            print("Starting compilation.")
-            awgModule.set('compiler/sourcestring', awg_program)
-            compilerStatus = -1
-            while compilerStatus == -1:
-                compilerStatus = awgModule.getInt('compiler/status')
-                time.sleep(0.1)
-            compilerStatusString = awgModule.getString('compiler/statusstring')
-            print(f"Compiler messages:\n--------------\n{compilerStatusString}\n--------------")
-            if compilerStatus == 1: # compilation failed
-                raise Exception("Compilation failed.")
-            if compilerStatus == 0:
-                print("Compilation successful with no warnings.")
-            if compilerStatus == 2:
-                print("Compilation successful with warnings.")
-            print("Waiting for the upload to the instrument.")
-            elfProgress = 0
-            elfStatus = 0
-            lastElfProgressPrc = None
-            while (elfProgress < 1.0) and (elfStatus != 1):
-                elfProgress = awgModule.getDouble('progress')
-                elfStatus = awgModule.getInt('elf/status')
-                elfProgressPrc = round(elfProgress * 100);
-                if elfProgressPrc != lastElfProgressPrc:
-                    print(f'Upload progress: {elfProgressPrc:2.0f}%')
-                    lastElfProgressPrc = elfProgressPrc
-                time.sleep(0.1)
-        if elfStatus == 0 and verbose == 1:
-            print("Upload to the instrument successful.")
-        if elfStatus == 1:
-            raise Exception("Upload to the instrument failed.")
+    #     awgModule = inst.awgModule()
+    #     awgModule.set('device', device_id)
+    #     awgModule.set('index', seqr_index)
+    #     awgModule.execute()
+    #     """Compile and upload awg_program as .elf file"""
+    #     if verbose==0:
+    #         # print("Starting compilation.")
+    #         awgModule.set('compiler/sourcestring', awg_program)
+    #         compilerStatus = -1
+    #         while compilerStatus == -1:
+    #             compilerStatus = awgModule.getInt('compiler/status')
+    #             time.sleep(0.1)
+    #         compilerStatusString = awgModule.getString('compiler/statusstring')
+    #         # print(f"Compiler messages:\n--------------\n{compilerStatusString}\n--------------")
+    #         if compilerStatus == 1: # compilation failed
+    #             print(awg_program)
+    #             raise Exception("Compilation failed.")
+    #         # if compilerStatus == 0:
+    #         #     print("Compilation successful with no warnings.")
+    #         # if compilerStatus == 2:
+    #         #     print("Compilation successful with warnings.")
+    #         # print("Waiting for the upload to the instrument.")
+    #         elfProgress = 0
+    #         elfStatus = 0
+    #         lastElfProgressPrc = None
+    #         while (elfProgress < 1.0) and (elfStatus != 1):
+    #             elfProgress = awgModule.getDouble('progress')
+    #             elfStatus = awgModule.getInt('elf/status')
+    #             elfProgressPrc = round(elfProgress * 100);
+    #             if elfProgressPrc != lastElfProgressPrc:
+    #                 # print(f'Upload progress: {elfProgressPrc:2.0f}%')
+    #                 lastElfProgressPrc = elfProgressPrc
+    #             time.sleep(0.1)
+    #     else:
+    #         print("Starting compilation.")
+    #         awgModule.set('compiler/sourcestring', awg_program)
+    #         compilerStatus = -1
+    #         while compilerStatus == -1:
+    #             compilerStatus = awgModule.getInt('compiler/status')
+    #             time.sleep(0.1)
+    #         compilerStatusString = awgModule.getString('compiler/statusstring')
+    #         print(f"Compiler messages:\n--------------\n{compilerStatusString}\n--------------")
+    #         if compilerStatus == 1: # compilation failed
+    #             raise Exception("Compilation failed.")
+    #         if compilerStatus == 0:
+    #             print("Compilation successful with no warnings.")
+    #         if compilerStatus == 2:
+    #             print("Compilation successful with warnings.")
+    #         print("Waiting for the upload to the instrument.")
+    #         elfProgress = 0
+    #         elfStatus = 0
+    #         lastElfProgressPrc = None
+    #         while (elfProgress < 1.0) and (elfStatus != 1):
+    #             elfProgress = awgModule.getDouble('progress')
+    #             elfStatus = awgModule.getInt('elf/status')
+    #             elfProgressPrc = round(elfProgress * 100);
+    #             if elfProgressPrc != lastElfProgressPrc:
+    #                 print(f'Upload progress: {elfProgressPrc:2.0f}%')
+    #                 lastElfProgressPrc = elfProgressPrc
+    #             time.sleep(0.1)
+    #     if elfStatus == 0 and verbose == 1:
+    #         print("Upload to the instrument successful.")
+    #     if elfStatus == 1:
+    #         raise Exception("Upload to the instrument failed.")
 
 
     def IQ_imbalance(self,awg,g,phi):
@@ -2239,9 +2206,10 @@ class qubit():
 
     def roundToBase(self,nPoints,base=16):
         '''Make the AWG happy by uploading a wfm whose points are multiple of 16'''
-        y = base*round(nPoints/base)
+        y = int(base*round(nPoints/base))
         if y==0:
-            y = base*round(nPoints/base+1)
+            y = int(base*round(nPoints/base+1))
+            
         return y
 
     def odd(n):
@@ -2303,3 +2271,4 @@ class qubit():
         
         path = "C:/Users/LFL/Documents/Zurich Instruments/LabOne/WebServer/awg/waves/"
         np.savetxt(path+filename+"_wfm"+".csv",wfm_data, delimiter = ",") # save file where it can be called by the AWG sequence program
+        

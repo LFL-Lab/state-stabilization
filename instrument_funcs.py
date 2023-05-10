@@ -16,8 +16,9 @@ import json
 
 client = Labber.connectToServer()
 
-def set_qb_LO(freq):
-    print(f'Setting qubit LO to {round(freq*1e-9,5)} GHz')
+def set_qb_LO(freq,sweep=False):
+    if not sweep:
+        print(f'Setting qubit LO to {round(freq*1e-9,5)} GHz')
     # initialize qubit LO
     qLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='qubit', startup = 'Get config'))
     qLO.startInstrument()
@@ -30,8 +31,9 @@ def get_qb_LO():
     qLO.startInstrument()
     return qLO.getValue('Frequency')
 
-def set_rr_LO(freq):
-    print(f'Setting readout LO to {round(freq*1e-9,5)} GHz')
+def set_rr_LO(freq,sweep=False):
+    if not sweep:
+        print(f'Setting readout LO to {round(freq*1e-9,5)} GHz')
     # initialize readout LO
     rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
     rrLO.startInstrument()

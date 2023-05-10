@@ -15,6 +15,7 @@ import scipy.fftpack
 import time
 import os
 from json import loads
+from qubit import qubit
 # from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 # from matplotlib.colors import LightSource
 from types import SimpleNamespace
@@ -33,6 +34,11 @@ plt.style.use(['science','no-latex'])
 # plt.rcParams['font.family'] =  'Arial'
 # plt.rcParams['font.size'] = 16
 plt.rcParams['figure.dpi'] = 150
+plt.rcParams['axes.facecolor'] = 'white'
+plt.rcParams['axes.edgecolor'] = 'black'
+plt.rcParams['axes.grid'] = False
+plt.rcParams['figure.frameon'] = True
+# plt.grid(False)
 # plt.rcParams["xtick.direction"] = "in"
 # plt.rcParams["ytick.direction"] = "in"
 # plt.rcParams["xtick.major.top"] = True
@@ -87,26 +93,27 @@ def spec_plot(freq,I,Q,attenuation=-30,df=0.1e6,plot='mag',element='resonator',f
 
     if element == 'qubit':
 
-        # I data
-        ax1 = fig.add_subplot(221)
-        ax1.plot(freq,I,'-o', markersize = 3, c='C0')
-        ax1.set_xlabel('Frequency (GHz)')
-        ax1.set_ylabel('I (mV)')
-        # Q data
-        ax1 = fig.add_subplot(222)
-        ax1.plot(freq,Q,'-o', markersize = 3, c='C0')
-        ax1.set_xlabel('Frequency (GHz)')
-        ax1.set_ylabel('Q (mV)')
-        # phase data
-        ax1 = fig.add_subplot(223)
-        ax1.plot(freq,phase,'-o', markersize = 3, c='C0')
-        ax1.set_xlabel('Frequency (GHz)')
-        ax1.set_ylabel('Phase (rad)')
+        # # I data
+        # ax1 = fig.add_subplot(221)
+        # ax1.plot(freq,I,'-o', markersize = 3, c='C0')
+        # ax1.set_xlabel('Frequency (GHz)')
+        # ax1.set_ylabel('I (mV)')
+        # # Q data
+        # ax1 = fig.add_subplot(222)
+        # ax1.plot(freq,Q,'-o', markersize = 3, c='C0')
+        # ax1.set_xlabel('Frequency (GHz)')
+        # ax1.set_ylabel('Q (mV)')
         # Power data
-        ax1 = fig.add_subplot(224)
+        ax1 = fig.add_subplot()
         ax1.plot(freq,mag,'-o', markersize = 3, c='C0')
         ax1.set_xlabel('Frequency (GHz)')
         ax1.set_ylabel('Magnitude (mV)')
+        # phase data
+        # ax1 = fig.add_subplot(212)
+        # ax1.plot(freq,phase,'-o', markersize = 3, c='C0')
+        # ax1.set_xlabel('Frequency (GHz)')
+        # ax1.set_ylabel('Phase (rad)')
+        
 
     elif element == 'resonator':
         # Power data
@@ -366,11 +373,11 @@ def fit_data(x_vector,y_vector,sequence='rabi',dt=0.01,fitFunc='',verbose=0):
 
 
 #%% plot_data
-def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,amp_q=1,
-                              pi2Width='',nAverages=1, sampling_rate=1e9,
-                              integration_length=2e-6,cav_resp_time=5e-6,stepSize=5e-6, iteration = 1,
-                              Tmax=5e-6,measPeriod=5e-6,active_reset=False,
-                              fitted_pars=np.zeros(7),plot_mode=0,rr_IF=5e6,fitFunc='',savefig=True):
+def plot_data(x_vector,y_vector,sequence='rabi',qubitDriveFreq=3.8e9,qb_power=0.1,
+                              pi2Width=0,nAverages=1,
+                              cav_resp_time=5e-6, iteration = 1,
+                              Tmax=5e-6,active_reset=False,
+                              fitted_pars=np.zeros(7),rr_IF=5e6,fitFunc='',savefig=True):
 
     x_vector = x_vector*1e6
     y_vector = y_vector*1e3

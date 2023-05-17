@@ -6,94 +6,110 @@ Created on Thu Apr 14 11:35:33 2022
 
 
 from qubit import qubit
-import plot_functions as pf
+import numpy as np
 
 qb_name = 'qb6'
 qb = qubit(qb_name)
-#%% Spectroscopy
-'''-----------------------------------------------------Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=3.7,stop=3.9,step=10e-6) # frequencies are in GHz
+#%% Spectroscopy
+'''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
+
+freqs = np.arange(start=6.702,stop=6.706,step=20e-6) # frequencies are in GHz
+
+qb.exp_pars = {
+    'n_avg':                256,
+    'qubit_reset_time':     10e-6,
+    'amp_q':                0.1,
+    'satur_dur':            4e-6,
+    'rr_attenuation':       0,
+    'on_off':               False,
+    }
+
+
+p_data,I,Q = qb.spectroscopy('resonator',freqs)
+qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+
+'''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
+
+freqs = np.arange(start=3.871,stop=3.885,step=10e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'n_avg':                1024,
-    'qubit_reset_time':     60e-6,
-    'amp_q':                0.2,
+    'qubit_reset_time':     200e-6,
+    'amp_q':                0.1,
     'satur_dur':            40e-6,
-    'rr_attenuation':       20,
+    'rr_attenuation':       15,
+    'on_off':               True,
     }
 
-p_data,I,Q = qb.spectroscopy(freqs,save_data=True)
-qb.spec_plot(freq=freqs,I=I,Q=Q,element='qubit',find_peaks=True)
+p_data,I,Q = qb.spectroscopy('qubit',freqs)
+qb.qb_spec_plot(freq=freqs,I=I,Q=Q,find_peaks=True)
 
 
 #%% Time Rabi
 '''-----------------------------------------------------Time Rabi------------------------------------------------------'''
 qb.exp_pars = {
-    'n_avg':                128,
+    'n_avg':                512,
     'x0':                   13e-9,
-    'xmax':                 0.6e-6,
+    'xmax':                 1e-6,
     'dx':                   6e-9,
     'fsAWG':                2.4e9,
-    'amp_q':                0.1,
+    'amp_q':                0.5,
     'active_reset':         False,
-    'qubit_reset_time':     8e-6,
+    'qubit_reset_time':     200e-6,
+    'qubit_drive_freq':     3.879e9,
     }
 
-t,data,nSteps = qb.pulsed_exp(exp='rabi',verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(exp='rabi',verbose=1,check_mixers=False)
 # plot data
-fitted_pars,error = qb.fit_data(x_vector=t[0],y_vector=data,dt=t[-1]/nSteps,verbose=0)
-
-qb.plot_data(x_vector=t[0],y_vector=data,fitted_pars=fitted_pars)
-
-pi_pulse = np.round(1/2*fitted_pars[1])
-threshold = round(np.mean(data)*2**12)
+fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
+qb.plot_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars)
 
 #%% Power Rabi
 '''-----------------------------------------------------Power Rabi------------------------------------------------------'''
+
 qb.exp_pars = {
-    'n_avg':                128,
-    'x0':                   0,
-    'xmax':                 0.5,
-    'dx':                   1e-3,
+    'n_avg':                512,
+    'x0':                   0.01,
+    'xmax':                 1,
+    'dx':                   10e-3,
     'fsAWG':                2.4e9,
-    'amp_q':                0.1,
     'active_reset':         False,
-    'qubit_reset_time':     8e-6,
+    'qubit_reset_time':     200e-6,
+    'qubit_drive_freq':     3.879e9,
     }
 
-amp,data,nSteps = qb.pulsed_exp(exp='p-rabi',verbose=1,check_mixers=False,save_data=True)
+amp,data,nSteps = qb.pulsed_exp(exp='p-rabi',verbose=1,check_mixers=False)
 # plot data
-fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='rabi',dt=t[-1]/nSteps,verbose=0)
-pf.plot_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars,sequence='rabi',**options_rabi,iteration=iteration_rabi)
+fitted_pars,error = qb.fit_data(x_vector=amp,y_vector=data,dx=qb.dx,verbose=0)
+qb.plot_data(x_vector=amp,y_vector=data,fitted_pars=fitted_pars)
+qb.update_pi(pi_amp=fitted_pars[1]/2)
+
 
 #%% Single Shot Experiment
 
 qb.exp_pars = {
-    'num_samples':          128,
+    'num_samples':          512,
     'n_avg':                1,
     'fsAWG':                2.4e9,
-    'amp_q':                0.1,
-    'qubit_reset_time':     8e-6,
+    'qubit_reset_time':     200e-6,
     }
 
-
-
-data_OFF, data_pi = qb.single_shot(save_data=True)
+data = qb.single_shot()
 
 #make 2D histogram
-pf.plot_single_shot(data_OFF, data_pi)
+qb.plot_single_shot(data)
 
 #%% T1 Measurement
 qb.exp_pars = {
-    'n_avg':                128,
-    'x0':                   0,
-    'xmax':                 1,
-    'dx':                   1e-3,
+    'n_avg':                512,
+    'x0':                   10e-9,
+    'xmax':                 5e-6,
+    'dx':                   100e-9,
     'fsAWG':                2.4e9,
-    'amp_q':                0.1,
     'active_reset':         False,
-    'qubit_reset_time':     8e-6,
+    'qubit_reset_time':     200e-6,
+    'qubit_drive_freq':     3.879e9,
 }
 
 
@@ -1107,9 +1123,12 @@ sweep_count += 1
 
 
 
+#%% Mixer Optimization
+qb.min_leak(inst=qb.awg,mixer='qubit',mode='coarse',plot=True)
+qb.min_leak(inst=qb.qa,mixer='resonator',mode='coarse',plot=True)
 
-
-
+qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF'],mode='coarse')
+qb.suppr_image(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],f_IF=qb.qb_pars['rr_IF'],mode='coarse',amp=0.3)
 
 
 

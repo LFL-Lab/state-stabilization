@@ -46,6 +46,12 @@ def get_rr_LO():
     rrLO.startInstrument()
     return rrLO.getValue('Frequency')
 
+def set_rr_output(output=True):
+    # initialize qubit LO
+    rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
+    rrLO.startInstrument()
+    return rrLO.setValue('Output',output)
+
 def set_attenuator(attenuation):
     # initialize digital attenuator
     attn = client.connectToInstrument('Vaunix Lab Brick Digital Attenuator',dict(name='Readout',address='26777'))
@@ -60,10 +66,10 @@ def get_attenuation():
     return attn.getValue('Attenuation')
 
 def init_sa():
-    sa = client.connectToInstrument('SignalHound SpectrumAnalyzer', dict(name='20234179', startup = 'Get config'))
+    sa = client.connectToInstrument('SignalHound SpectrumAnalyzer', dict(name='20234179',startup='Get Config'))
     sa.startInstrument()
-    sa.setValue('Span',2e6)
-    sa.setValue('Bandwidth',1e2)
+    sa.setValue('Span',0.5e6)
+    sa.setValue('Bandwidth',1e3)
     sa.setValue('Threshold',-20)
     # sa = sa_open_device()["handle"]
     # sa_config_acquisition(device = sa, detector = SA_AVERAGE, scale = SA_LOG_SCALE)

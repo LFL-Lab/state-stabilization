@@ -38,6 +38,7 @@ pi=np.pi
 # plt.rcParams.update(plt.rcParamsDefault)
 # for a complete set of parameters "print(plt.rcParams)"
 sns.set_style('ticks')
+plt.rcParams['figure.dpi'] = 150
 plt.rcParams['text.usetex'] = False
 plt.rcParams['font.family'] =  'Arial'
 plt.rcParams['font.size'] = 16
@@ -135,7 +136,7 @@ class qubit():
             ['/dev8233/awgs/0/outputs/0/modulation/mode', 3], # Output 1 modulated with Sine 1
             ['/dev8233/awgs/0/outputs/1/modulation/mode', 4], # Output 2 modulated with Sine 2
             ['/dev8233/sines/0/phaseshift', 0],   # Sine 1 phase
-            ['/dev8233/sines/1/phaseshift' , 90],   # Sine 2 phase
+            ['/dev8233/sines/1/phaseshift' , 90+self.qb_pars['qb_mixer_imbalance'][1]],   # Sine 2 phase
             ['/dev8233/triggers/out/0/source', 4] # sets the marker 1 channel output
         ]
         print('Applying initial settings to HDAWG')
@@ -146,7 +147,7 @@ class qubit():
         qa_setting = [
             # daq.setInt('/dev2528/awgs/0/outputs/0/mode', 1) # AWG set to modulation mode
             ['/dev2528/system/extclk', 1], # sets clock reference to external 10MHz
-            ['/dev2528/sigouts/*/range',0.15], #sets output range to 150mV
+            ['/dev2528/sigouts/*/range',1.5], #sets output range to 150mV
             ['/dev2528/sigouts/*/on', 1], #turn on outputs 1 and 2
             ['/dev2528/sigins/0/range', 0.8],  #sets input range to 500mV
             ['/dev2528/sigouts/0/offset', self.qb_pars['rr_mixer_offsets'][0]],
@@ -245,13 +246,13 @@ class qubit():
         '''
         result_length=2*self.exp_pars['num_samples']
         self.exp = 'single-shot'
-
+        self.n_steps = result_length
+        
         readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
-
         
         self.single_shot_setup()
         # setup QA
-        self.setup_qa_awg(readout_pulse_length) # setup QA AWG for readout
+        self.setup_qa_awg() # setup QA AWG for readout
         time.sleep(0.1)
 
         sweep_data, paths = self.create_sweep_data_dict()
@@ -271,7 +272,7 @@ class qubit():
         print('Start measurement')
         bt = time.time()
         self.enable_awg(self.awg,enable=1)
-        data = self.acquisition_poll(paths, result_length, timeout = 5*self.exp_pars['num_samples']*self.exp_pars['qubit_reset_time']) # transfers data from the QA result to the API for this frequency point
+        data = self.acquisition_poll(paths, result_length, timeout = 10*2*self.exp_pars['num_samples']*self.exp_pars['qubit_reset_time']) # transfers data from the QA result to the API for this frequency point
         et = time.time()
         duration = et-bt
         print(f'Measurement time: %.1f s'%duration)
@@ -299,8 +300,8 @@ class qubit():
         DESCRIPTION: Executes qubit spectroscopy.
 
         '''
-        if element == 'resonator':
-            instfuncs.set_rr_output(False)
+        if element == 'rr':
+            instfuncs.set_output('qubit',False)
             
         self.exp = 'spectroscopy'
         self.exp_pars['fsAWG'] = 600e6
@@ -308,14 +309,13 @@ class qubit():
             result_length = 2*self.exp_pars['n_avg']
         else:
             result_length = self.exp_pars['n_avg']
+        self.n_steps = result_length
             
-        instfuncs.set_attenuator(self.exp_pars['rr_attenuation'])
-
-        readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
-
+        instfuncs.set_attenuator(self.exp_pars['rr_atten'])
+        # readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
         self.pulsed_spec_setup()
-        self.setup_qa_awg(readout_pulse_length)
-        self.config_qa(result_length=result_length,delay=self.qb_pars['cav_resp_time'])
+        self.setup_qa_awg()
+        self.config_qa(result_length=result_length,source=7)
         
         print('Start measurement')
         sweep_data, paths = self.create_sweep_data_dict()
@@ -328,7 +328,7 @@ class qubit():
         
         with tqdm(total = len(freqs)) as progress_bar:
             for f in freqs:
-                instfuncs.set_qb_LO(f*1e9,sweep=True)
+                instfuncs.set_LO(element,f*1e9,sweep=True)
                 self.qa_result_reset()
                 self.qa_result_enable()
                 self.enable_awg(self.awg) #runs the drive sequence
@@ -361,7 +361,7 @@ class qubit():
         if save_data:
             self.save_data(project,device_name,data=np.vstack((freqs,I_data,Q_data)))
         
-        if element == 'resonator':
+        if element == 'rr':
             instfuncs.set_rr_output(True)
             
         return power_data,I_data,Q_data
@@ -369,7 +369,6 @@ class qubit():
     def pulsed_exp(self,exp='rabi',verbose=1,check_mixers=False,save_data=True):
 
         source = 2
-        readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 0.5e-6
 
         self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
         self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
@@ -383,7 +382,8 @@ class qubit():
         self.exp = exp
 
         #setup HDAWG
-        if self.exp == 'p-rabi':
+        # create time or amplitude arrays 
+        if self.exp == 'p-rabi' or self.exp == 'z-gate':
             self.x0 = self.exp_pars['x0']
             self.xmax = self.exp_pars['xmax']
             self.dx = self.exp_pars['dx']
@@ -392,30 +392,31 @@ class qubit():
         else:
             self.n_points,self.n_steps,self.x0,self.xmax,self.dx = self.calc_steps(verbose=verbose)
             
-        
+        #sets the modulation ON or OFF
         if self.qb_pars['qb_IF'] != 0:
             self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
             self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
         else:
             self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
-            
-        self.awg.setInt('/dev8233/awgs/0/time',int(2.4e9/self.exp_pars['fsAWG']-1)) # sets AWG sampling rate to 600 MHz
+        
+        # adjusts the sampling rate of the AWG
+        self.awg.setInt('/dev8233/awgs/0/time',int(np.log2(2.4e9/self.exp_pars['fsAWG']))) # sets AWG sampling rate to 600 MHz
         self.setup_awg()
         
-        # setup QA
-        self.setup_qa_awg(readout_pulse_length=readout_pulse_length) # setup QA AWG for readout
+        # setup QA AWG
+        self.setup_qa_awg() # setup QA AWG for readout
         
         # setup QA Result unit
         self.config_qa(result_length=self.n_steps,source=source) # configure UHFQA result unit, source = 2 means data is rotated
         self.qa.sync()
         
+        # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
             self.setup_active_reset(threshold=threshold)
 
         exp_dur = self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
 
-        
         if self.exp_pars['active_reset'] == True:
             timeout = 0.2*1.2*exp_dur
         else:
@@ -443,11 +444,10 @@ class qubit():
         end_meas = time.time()
         print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
         
-        x_array = self.get_xdata_frm_ct()
-        if self.exp != 'p-rabi':
-            x_array = x_array/self.exp_pars['fsAWG']
-        elif self.exp == 'p-rabi':
-            x_array = self.get_xdata_frm_ct()
+        if self.exp == 'p-rabi':
+            x_array = self.get_xdata_frm_ct()[0]
+        elif self.exp != 'p-rabi' and self.exp != 'z-gate':
+            x_array = x_array[0]/self.exp_pars['fsAWG']
             
         data = sweep_data[paths[0]][0:self.n_steps]/4096
         
@@ -461,7 +461,7 @@ class qubit():
         if save_data:
             self.save_data(project,device_name,data=np.vstack((x_array,results)))
             
-        return x_array[0],results,self.n_steps
+        return x_array,results,self.n_steps
         
         # self.create_wfms(sequence=sequence, n_points=n_points, Tmax=Tmax)
 
@@ -496,7 +496,9 @@ class qubit():
         # setup waveforms
         self.setup_waveforms()
         if self.exp == 'p-rabi':
-            self.make_ct(sweep_var='amp')
+            self.make_ct(sweep_var = 'amp')
+        elif self.exp == 'z-gate':
+            self.make_ct(sweep_var = 'phase')
         elif self.exp != 'spectroscopy': 
             # setup command table    
             self.make_ct(sweep_var='time')
@@ -518,8 +520,8 @@ class qubit():
             code = self.ramsey_sequence()
         elif self.exp == 'echo':
             code = self.echo_sequence()
-
-            
+        elif self.exp == 'z-gate':
+            code = self.z_gate_sequence()
         
         return code    
     
@@ -579,7 +581,7 @@ class qubit():
         elif self.exp == 'T1':
             
             N = self.qb_pars['pi_len']
-            pi_pulse = self.calc_amp('dev8233', amp=self.qb_pars['pi_amp'])*gaussian(N,N/5)
+            pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
             
             self.sequence.waveforms[0] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
                 Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
@@ -588,7 +590,7 @@ class qubit():
                 
         elif self.exp == 'ramsey':
             N = self.qb_pars['pi_len']
-            pi2_pulse = self.calc_amp('dev8233', amp=self.qb_pars['pi_half_amp']) * gaussian(N,N/5)
+            pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
             self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
                 Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
             self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
@@ -596,8 +598,8 @@ class qubit():
             
         elif self.exp == 'echo':
             N = self.qb_pars['pi_len']
-            pi2_pulse = self.calc_amp('dev8233', amp=self.qb_pars['pi_half_amp']) * gaussian(N,N/5)
-            pi_pulse = self.calc_amp('dev8233', amp=self.qb_pars['pi_amp'])*gaussian(N,N/5)
+            pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+            pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
             
             self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
                 Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
@@ -606,6 +608,16 @@ class qubit():
             self.sequence.waveforms[2] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
                 Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
             
+        elif self.exp == 'z-gate':
+            N = self.qb_pars['pi_len']
+            pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+            self.n_points = self.roundToBase(1e-6*self.exp_pars['fsAWG'])
+            
+            self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+                Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+            self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero", output=OutputType.OUT1|OutputType.OUT2))
+            
+            
         elif self.exp == 'single_shot' or self.exp_pars['active_reset'] == True:
             N = self.qb_pars['pi_len']
             pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
@@ -613,11 +625,11 @@ class qubit():
                 Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
             
     def setup_mixer_calib(self,inst,amp = 1):
-        self.awg.setInt('/dev8233/awgs/0/time',11) # sets AWG sampling rate to 600 MHz
+        self.awg.setInt('/dev8233/awgs/0/time',13) # sets AWG sampling rate to 292 kHz
         self.sequence = Sequence()
         self.sequence.code = self.mixer_calib_sequence()
         self.sequence.constants['amp'] = amp
-        self.sequence.constants['N'] = self.roundToBase(0.1*1.17e6)
+        self.sequence.constants['N'] = self.roundToBase(1024)
         if inst == self.awg:
             with self.hdawg_core.set_transaction():
                     self.hdawg_core.awgs[0].load_sequencer_program(self.sequence)
@@ -696,7 +708,7 @@ class qubit():
 
         return awg_program
     
-    def T1_sequence(self,active_reset=0):
+    def T1_sequence(self):
         awg_program = '''
         resetOscPhase();
         wave w_marker = 2*marker(512,1);
@@ -704,7 +716,7 @@ class qubit():
         // Beginning of the core sequencer program executed on the HDAWG at run time
         repeat(n_avg){
             for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_pi_I,1,2,w_pi_Q);
+                    playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
                     executeTableEntry(i);
                     playWave(1,w_marker);
                     playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
@@ -713,7 +725,7 @@ class qubit():
 
         return awg_program
     
-    def ramsey_sequence(self,nAverages=1000,n_steps=100,active_reset=0):
+    def ramsey_sequence(self):
         
         awg_program = '''
             resetOscPhase();
@@ -723,9 +735,9 @@ class qubit():
             // Beginning of the core sequencer program executed on the HDAWG at run time
             repeat(n_avg){
                 for (i=0; i<n_steps; i++) {
-                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
                         executeTableEntry(i);
-                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
                         playWave(1,w_marker);
                         playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
               }
@@ -733,7 +745,7 @@ class qubit():
 
         return awg_program
 
-    def echo_sequence(self,nAverages=1000,n_steps=100,active_reset=0):
+    def echo_sequence(self):
 
         awg_program = '''
         resetOscPhase();
@@ -742,11 +754,32 @@ class qubit():
         // Beginning of the core sequencer program executed on the HDAWG at run time
         repeat(n_avg){
             for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
                     executeTableEntry(i);
-                    playWave(1,2,w_pi_I,1,2,w_pi_Q);
+                    playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
                     executeTableEntry(i);
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q);
+                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
+                    playWave(1,w_marker);
+                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
+          }
+        }'''
+
+        return awg_program
+    
+    def z_gate_sequence(self):
+        
+        awg_program = '''
+        
+        resetOscPhase();
+        wave w_marker = 2*marker(512,1);
+        var i;
+        // Beginning of the core sequencer program executed on the HDAWG at run time
+        repeat(n_avg){
+            for (i=0; i<n_steps; i++) {
+                    resetOscPhase();
+                    executeTableEntry(0);
+                    playWave(1,2,w_zero);
+                    executeTableEntry(i);
                     playWave(1,w_marker);
                     playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
           }
@@ -764,7 +797,7 @@ class qubit():
             // OFF Measurement
             playWave(1,w_marker);
             playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-            playWave(1,2,w_pi_I,1,2,w_pi_Q);
+            playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
             playWave(1,w_marker);
             playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
             }'''
@@ -778,10 +811,8 @@ class qubit():
             wave w_const = amp*ones(N);
             wave w_zeros = zeros(N);
 
-            while (true) {
-                playWave(1,2,w_const,1,2,w_zeros);
-                waitWave();
-                }
+            playWave(1,2,w_const,1,2,w_zeros);
+            playHold(1e9);
         '''
 
         return awg_program
@@ -795,7 +826,7 @@ class qubit():
             if (getDigTrigger(2) == 0) {
                 wait(10);
             } else {
-                playWave(1,2,w_pi_I,1,2,w_pi_Q);
+                playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
                 }
             wait(10000);
           '''
@@ -803,35 +834,49 @@ class qubit():
         return awg_program
          
     #%% setup_QA
-    def setup_qa_awg(self,readout_pulse_length=5e-6):
+    def setup_qa_awg(self):
         
-        self.qa.setInt('/dev2528/awgs/0/time',2)
+        self.qa.setInt('/dev2528/awgs/0/time',0)
         
         self.qa_sequence = Sequence()
         self.qa_sequence.code = """
-        const cav_resp_time = delay;
 
-        // Readout pulse
-        wave readoutPulse = 0.67*ones(L);
-
-        repeat(N) {
+        repeat(n_avg) {
             waitDigTrigger(1,1);
             startQA();
-            playWave(1,readoutPulse);
+            playWave(1,ro_pulse_I,2,ro_pulse_Q);
         }
         """
         
-        self.qa_sequence.constants['delay'] = self.roundToBase(self.qb_pars['cav_resp_time']*450e6)
-        self.qa_sequence.constants['L'] = self.roundToBase(readout_pulse_length*450e6)
-        self.qa_sequence.constants['N'] = self.exp_pars['n_avg']*self.n_steps 
-        # self.qa_sequence.constants['amp'] = self.calc_amp('dev2528', amp=0.1)
+        self.qa_sequence.waveforms = Waveforms() # initialize waveforms
+        N = self.roundToBase(self.qb_pars['readout_length']*1.8e9)
+        # w_IF = 2*pi*self.qb_pars['rr_IF']
+        # a = self.qb_pars['rr_mixer_imbalance'][0]
+        # phi = self.qb_pars['rr_mixer_imbalance'][1]
+        # t_arr = np.linspace(0,2.3e-6,4096)
+        # ro_pulse_I = 0.5*gaussian(N,N/5) *np.cos(w_IF*t_arr)
+        # ro_pulse_Q = 0.5/a * gaussian(N,N/5) * np.sin(w_IF*t_arr+phi)
+        # self.qa_sequence.waveforms[0] = (Wave(ro_pulse_I, name="ro_pulse_I", output=OutputType.OUT1),
+        #         Wave(ro_pulse_Q, name="ro_pulse_Q", output=OutputType.OUT2))
+        self.qa_sequence.waveforms[0] = (Wave(0.5*np.ones(N), name="ro_pulse_I", output=OutputType.OUT1),
+                Wave(np.zeros(N), name="ro_pulse_Q", output=OutputType.OUT2))
+        
+        if self.exp == 'spectroscopy':
+            self.qa_sequence.constants['n_avg'] = self.n_steps 
+        else:
+            self.qa_sequence.constants['n_avg'] = self.exp_pars['n_avg']*self.n_steps 
         
         with self.qa_awg_core.set_transaction():
-            self.qa_awg_core.awgs[0].load_sequencer_program(self.qa_sequence)
+            try:
+                self.qa_awg_core.awgs[0].load_sequencer_program(self.qa_sequence)
+            except:
+                print(self.qa_sequence)
+            self.qa_awg_core.awgs[0].write_to_waveform_memory(self.qa_sequence.waveforms)
             
         self.qa.setInt('/dev2528/awgs/0/auxtriggers/0/channel', 2) # sets the source of digital trigger 1 to be the signal at trigger input 3 (back panel)
         self.qa.setDouble('/dev2528/triggers/in/2/level', 0.1)
         self.qa.setInt('/dev2528/awgs/0/auxtriggers/0/slope', 1)
+        
         
 
     def config_qa(self,result_length=1,delay=300e-9,source=7):
@@ -845,13 +890,13 @@ class qubit():
 
         # QA setup Settings
         self.qa.setInt('/dev2528/qas/0/integration/sources/0', 0)
-        self.qa.setInt('/dev2528/qas/0/delay',round(delay*base_rate))
+        self.qa.setInt('/dev2528/qas/0/delay',round(self.qb_pars['cav_resp_time']*base_rate))
         # if sequence =='spec':
         #     self.qa.setInt('/dev2528/qas/0/integration/mode'.format(device), 0) # 0 for standard (4096 samples max), 1 for spectroscopy
         # elif sequence =='pulse':
         #     self.qa.setInt('/dev2528/qas/0/integration/mode'.format(device), 0)
         self.qa.setInt('/dev2528/qas/0/integration/mode', 0) # 0 for standard (4096 samples max), 1 for spectroscopy
-        self.qa.setInt('/dev2528/qas/0/integration/length', 4096)
+        self.qa.setInt('/dev2528/qas/0/integration/length', self.roundToBase(self.qb_pars['readout_length']*1.8e9))
         self.qa.setInt('/dev2528/qas/0/bypass/crosstalk', bypass_crosstalk)   #No crosstalk matrix
         self.qa.setInt('/dev2528/qas/0/bypass/deskew', 1)   #No crosstalk matrix
         # self.qa.setInt('/dev2528/qas/0/bypass/rotation'.format(device), 1)   #No rotation
@@ -1369,7 +1414,7 @@ class qubit():
         
         if self.exp == 'rabi':
             wfm_index = 2
-        elif self.exp == 'p-rabi':
+        elif self.exp == 'p-rabi'  or self.exp == 'z-gate':
             wfm_index = 0
         elif self.exp == 'T1':
             wfm_index = 1
@@ -1378,10 +1423,13 @@ class qubit():
         if self.exp == 'echo':
             wfm_index = 2
             
+            
         if sweep_var == 'time':
             self.ct_sweep_length(wfm_index)
         elif sweep_var == 'amp':
             self.ct_sweep_amp(wfm_index)
+        elif sweep_var == 'phase':
+            self.ct_sweep_phase(wfm_index)
         
     def ct_sweep_length(self,wfm_index):
             
@@ -1398,6 +1446,15 @@ class qubit():
             self.ct.table[i].amplitude0.value = amp
             self.ct.table[i].amplitude1.value = amp
 
+    def ct_sweep_phase(self,wfm_index):
+        
+        for i in range(self.n_steps):
+            phase = self.exp_pars['x0'] + i * self.exp_pars['dx']
+            self.ct.table[i].waveform.index = wfm_index
+            self.ct.table[i].phase0.value = phase
+            self.ct.table[i].phase1.value = phase
+            self.ct.table[i].waveform.samplingRateDivider = 0 # sets the AWG rate for the pi/2 pulses to 2.4 GHz
+            
     def init_ct(self):
         
         ct_schema = self.hdawg_core.awgs[0].commandtable.load_validation_schema()
@@ -1469,7 +1526,7 @@ class qubit():
             self.sa.setValue('Center frequency', fc)
             self.sa.setValue('Threshold',threshold)
 
-    def min_leak(self,inst,mode='fine',mixer='qubit',threshold=-50,measON=False,plot=False):
+    def min_leak(self,inst,f_LO=1e9,mode='fine',mixer='qubit',threshold=-50,measON=False,plot=False):
         """
 
         DESCRIPTION:
@@ -1520,11 +1577,10 @@ class qubit():
         L2 = len(VoltRange2)
         power_data = np.zeros((L1,L2))
         
-        if mixer == 'qubit':
-            f_LO = self.qb_pars['qb_LO']
-        elif mixer == 'resonator':
-            f_LO = self.qb_pars['rr_LO']
+        if mixer == 'rr':
             self.update_qb_value('rr_atten', 0)
+        else:
+            pass
             
         self.config_sa(fc=f_LO,threshold=threshold)
             
@@ -1581,8 +1637,8 @@ class qubit():
         if mixer == 'resonator':
             self.update_qb_value('rr_atten', atten)
         
-    def suppr_image(self,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_IF=50e6,amp=1,
-                    sb='lsb',gen=0,plot=True):
+    def suppr_image(self,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_IF=50e6,amp=0.2,
+                    sb='lsb',plot=True):
             """
 
             DESCRIPTION:
@@ -1622,8 +1678,8 @@ class qubit():
             elif mode == 'fine':
                 span_amp = 5.001e-3
                 da = 5e-4
-                span_phi = 0.5
-                dp = 0.015
+                span_phi = 0.501
+                dp = 0.05
 
             # get current values of phase and amplitude
             a0 = self.qb_pars['qb_mixer_imbalance'][0]
@@ -1632,8 +1688,10 @@ class qubit():
             phiArr = np.arange(p0-span_phi/2,p0+span_phi/2,dp)
             ampArr = np.arange(a0-span_amp/2,a0+span_amp/2,da)
 
+    
             # upload and run AWG sequence program
             self.setup_mixer_calib(inst,amp=amp)
+            self.update_qb_value('qb_LO', f_LO)
             self.awg.set('/dev8233/oscs/0/freq',f_IF)
             self.enable_awg(inst,enable=1)
             
@@ -1671,6 +1729,8 @@ class qubit():
             if plot:
                 self.plot_mixer_opt(ampArr*1e2,phiArr,  power_data,cal='SB',mixer='qubit',fc=f_im)
 
+    #%% optimize readout functions
+    # def optimize_atten(self,x0,xmax)
     #%% utilities
     def inst_init(self):
         
@@ -1725,15 +1785,12 @@ class qubit():
         x_array = np.zeros((1,self.n_steps))
         ct = self.hdawg_core.awgs[0].commandtable.load_from_device()
         for i in range(self.n_steps):
-            if self.exp != 'p-rabi':
-                value = ct.table[i].waveform.length
-                x_array[0][i] = int(value)
-            elif self.exp == 'p-rabi':
+            if self.exp == 'p-rabi':
                 value = ct.table[i].amplitude0.value
                 x_array[0][i] = value
-            else:
-                raise Exception(f'No command table used for {self.exp}')
-            
+            elif self.exp != 'p-rabi' and self.exp != 'z-gate':
+                value = ct.table[i].waveform.length
+                x_array[0][i] = int(value)
          
         return x_array
             
@@ -2079,7 +2136,7 @@ class qubit():
         plt.plot(adc2)
         plt.legend(["adc1", "adc2"])
         plt.show()
-
+        
     def qb_spec_plot(self,freq,I,Q,attenuation=-30,find_peaks=False):
 
         I = I*1e3
@@ -2178,21 +2235,24 @@ class qubit():
         ax = plt.gca()
         return plot, ax
 
-    def heatplot(self,xdata, ydata, data, xlabel = "", ylabel = "", normalize=False, cbar_label = 'log mag', **kwargs):
-        fig,ax = plt.figure(figsize=(4,3), dpi=300)
+    def heatplot(self,xdata, ydata, z_data, xlabel = "", ylabel = "", normalize=False, 
+                 cbar_label = 'log mag',title='', **kwargs):
+        
+        fig = plt.figure(figsize=(4,3), dpi=300)
+        ax  = fig.add_subplot()
         if normalize:
             cbar_label += ' (normalized)'
 
-        df = pd.DataFrame(data, columns = xdata, index = ydata)
+        df = pd.DataFrame(z_data, columns = xdata, index = ydata)
 
         if normalize:
             df = df.apply(lambda x: (x-x.mean())/x.std(), axis = 1)
 
         cbar_options = {
             'label':    cbar_label,
-            'ticks':    np.around(np.linspace(np.amin(data),np.amax(data),5),0),
-            'pad':      0.1,
-            'values':   np.linspace(np.amin(data),np.amax(data),1000),
+            'ticks':    np.around(np.linspace(np.amin(z_data),np.amax(z_data),5),1),
+            'pad':      0.11,
+            'values':   np.linspace(np.amin(z_data),np.amax(z_data),1000),
             'shrink':   1.2,
             'location': 'right',
         }
@@ -2202,18 +2262,19 @@ class qubit():
             'linewidths':  0,
             # 'xticklabels': np.linspace(min(xdata),max(xdata)+0.5,5),
             # 'yticklabels': np.linspace(min(ydata),max(ydata)+0.5,5),
-            'vmin':        np.amin(data),
-            'vmax':        np.amax(data)
+            'vmin':        np.amin(z_data),
+            'vmax':        np.amax(z_data)
         }
 
-        hm = sns.heatmap(df, ax=ax,cmap = 'viridis', cbar_kws=cbar_options, **kwargs)
+        hm = sns.heatmap(df, ax=ax,cmap = 'seismic', cbar_kws=cbar_options, **kwargs)
         hm.set_xlabel(xlabel, fontsize=12)
         hm.set_ylabel(ylabel, fontsize=12)
         hm.spines[:].set_visible(True)
-        ax.tick_params(direction='out',length=0.01,width=0.5,bottom=True, top=True, left=True, right=True,labeltop=False, labelbottom=True,labelrotation=90,labelsize=8,size=8)
+        ax.set_title(title)
+        ax.tick_params(direction='out',length=0.01,width=0.5,bottom=True, top=False, left=True, right=True,labeltop=False, labelbottom=True,labelrotation=90,labelsize=8,size=8)
         plt.yticks(rotation=0)
         plt.tight_layout()
-        plt.show()
+        
 
         return hm;
 
@@ -2233,8 +2294,12 @@ class qubit():
                 'States':   states
                     }
         dataF = pd.DataFrame(data=data)
-        plot = sns.jointplot(data=dataF, x='I [mV]',y='Q [mV]',hue='States',ax=axes,space=0)
-        plt.show()
+        ax = sns.jointplot(data=dataF, x='I [mV]',y='Q [mV]',hue='States',space=0)
+        txt=f'Single Shot {self.iteration}\n$P_r$ = -{self.qb_pars["rr_atten"]} dB | $T_\pi$ = {int(self.qb_pars["pi_len"]/2.4):d} ns | $A_\pi$ = {self.qb_pars["pi_amp"]:.3f}'
+        # ax.ax_joint.text(s=txt, size='medium', horizontalalignment='center', color='black')
+        ax.fig.suptitle(txt)
+        ax.fig.subplots_adjust(top = 0.85)
+        # plt.show()
 
     def plot_mixer_opt(self,par1,par2,power_data,cal='LO',mixer='qubit',fc=5e9):
         
@@ -2315,7 +2380,7 @@ class qubit():
 
         elif self.exp == "ramsey":
             f = self.extract_freq(x_vector, y_vector,dx,plot=0)
-            # print('Initial Guess for Freq:%.4f MHz'%(f))
+            print('Initial Guess for Freq:%.4f MHz'%(f))
             if x_vector[-1] > 20:
                 tau = 30
             else:
@@ -2345,7 +2410,17 @@ class qubit():
                     ub = [1.1*amp,15,1.1*offset]
                 fitFunction = self.decay
                 y_vector = env
-                # fitted_pars, covar = scy.optimize.curve_fit(decay, x_vector, env,p0=p0,method='trf',bounds=[lb,ub],xtol=1e-12,maxfev=20e3)
+        
+        elif self.exp == 'z-gate':
+            f = self.extract_freq(x_vector*1e-6, y_vector,dx,plot=0)
+            print('Initial Guess for Freq:%.4f Hz'%(f))
+            phi = pi
+            amp = abs(amp)
+            p0 = [amp,f,phi,offset]
+            lb = [0.75*amp,0.1*f,-pi,-2*abs(offset)]
+            ub = [2*amp,2*f,pi,2*abs(offset)]
+            fitFunction = self.cos
+            
         elif self.exp == "echo":
             if x_vector[-1] < 10:
                 tau = 2
@@ -2396,7 +2471,133 @@ class qubit():
             pass
 
         return fitted_pars,error
+    
+    def plot_p_rabi_data(self,x_vector,y_vector,fitted_pars,savefig=True):
 
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        ax.set_ylabel('Digitizer Voltage (mV)')
+        ax.set_xlabel('Pulse Amplitude')
+        ax.plot(x_vector,self.rabi(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
+        ax.set_title(f'Rabi Measurement {self.iteration:03d}')
+        textstr = f'$\omega_d$ = {qb_drive_freq:.4f} GHz\n$N$ = {self.exp_pars["n_avg"]}\n$A_\pi$ = {fitted_pars[1]/2:.3f}\n$T_\pi$ = {self.qb_pars["gauss_len"]/2.4:.1f} ns'
+        
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
+
+    
+    def plot_t_rabi_data(self,x_vector,y_vector,fitted_pars,savefig=True):
+        
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        x_vector = x_vector*1e3
+        
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        ax.set_ylabel('Digitizer Voltage (mV)')
+        ax.set_xlabel('Pulse Duration (ns)')
+        ax.plot(x_vector,self.rabi(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
+        ax.set_title(f'Rabi Measurement {self.iteration:03d}')
+        textstr = f'$\omega_d$ =  {qb_drive_freq:.4f} GHz\n$A_q$ = {self.exp_pars["amp_q"]:.2f} V\n$N$ = {self.exp_pars["n_avg"]}'
+        
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
+
+    def plot_ramsey_data(self,x_vector,y_vector,fitted_pars,fitFunc='',savefig=True):
+         
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        
+        ax.set_xlabel('Pulse Separation ($\mu$s)')
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        
+        if fitFunc == 'envelope':
+            ax.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
+        else:
+            ax.plot(x_vector,self.ramsey(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3],fitted_pars[4]),'r')
+        ax.set_title(f'Ramsey Measurement {self.iteration:03d}')
+        textstr = f'$T_\pi$={self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$\Delta$ = {fitted_pars[1]:.2f} MHz\n$T_2^R$ = {fitted_pars[3]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+    
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
+
+
+    def plot_z_gate_data(self,x_vector,y_vector,fitted_pars,savefig=True):
+        
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        
+        ax.set_ylabel('Digitizer Voltage (mV)')
+        ax.set_xlabel('$\phi$ (deg)')
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        ax.plot(x_vector,self.cos(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
+        ax.set_title(f'Virtual Z-Gate Measurement {self.iteration:03d}')
+        textstr = f'$T_\pi$={self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$N$ = {self.exp_pars["n_avg"]}'
+
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
+
+    def plot_echo_data(self,x_vector,y_vector,fitted_pars,savefig=True):
+         
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        ax.set_ylabel('Digitizer Voltage (mV)')
+        ax.set_xlabel('Pulse Separation ($\mu$s)')
+        ax.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
+        textstr = f'$T_\pi$ = {self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$T_2^E$ = {fitted_pars[1]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+        ax.set_title(f'Echo Measurement {self.iteration:03d}')
+        
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
+
+
+    def plot_T1_data(self,x_vector,y_vector,fitted_pars,savefig=True):
+        
+        qb_drive_freq = self.exp_pars['qubit_drive_freq']*1e-9
+        fig, ax = plt.subplots()
+        y_vector = y_vector*1e3
+        
+        ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+        ax.set_ylabel('Digitizer Voltage (mV)')
+        ax.set_xlabel('Delay ($\mu$s)')
+        ax.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
+        textstr = f'$T_\pi$= {self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$T_1$ = {fitted_pars[1]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+        ax.set_title(f'T1 Measurement {self.iteration:03d}')
+
+        plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    
+        plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
+    
+        if savefig:
+            plt.savefig(f'D:\\{project}\\{device_name}\\{self.exp}-data\\fig_{self.iteration:03d}.png',dpi='figure')
 
     def plot_data(self,x_vector,y_vector,fitted_pars=np.zeros(7),fitFunc='',savefig=True):
 
@@ -2424,35 +2625,36 @@ class qubit():
             ax.set_title(f'Rabi Measurement {self.iteration:03d}')
             textstr = f'$\omega_d$ =  {qb_drive_freq:.4f} GHz\n$A_q$ = {self.exp_pars["amp_q"]:.2f} V\n$N$ = {self.exp_pars["n_avg"]}'
 
-        elif self.exp == "ramsey":
+        elif self.exp == "ramsey" :
 
-            fig = plt.figure()
-            ax1 = fig.add_subplot(111)
-            fontSize = 16
-            tickSize = 11
-            markersize= 4
-            linewidth = 2
-            ax1.plot(x_vector, y_vector, 'o', markersize = markersize, c='C0')
-            ax1.set_ylabel('Digitizer Voltage (mV)',fontsize=fontSize)
-            ax1.set_xlabel('Pulse Separation ($\mu$s)')
-            for label in (ax1.get_xticklabels() + ax1.get_yticklabels()):
-                label.set_fontsize(tickSize)
+            ax.set_xlabel('Pulse Separation ($\mu$s)')
+            ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+            
             if fitFunc == 'envelope':
-                ax1.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r',linewidth=linewidth)
+                ax.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
             else:
-                ax1.plot(x_vector,self.ramsey(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3],fitted_pars[4]),'r',linewidth=linewidth)
-            ax1.set_title(f'Ramsey Measurement {self.iteration:03d}')
-            textstr = f'$T_pi/2$={self.qb_pars["pi_half_len"]:.1f} ns\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$\Delta$ = {fitted_pars[1]:.2f} MHz\n$T_2^R$ = {fitted_pars[3]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+                ax.plot(x_vector,self.ramsey(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3],fitted_pars[4]),'r')
+            ax.set_title(f'Ramsey Measurement {self.iteration:03d}')
+            textstr = f'$T_\pi$={self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$\Delta$ = {fitted_pars[1]:.2f} MHz\n$T_2^R$ = {fitted_pars[3]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+        
+        elif self.exp == 'z-gate':
+            
+            ax.set_ylabel('Digitizer Voltage (mV)')
+            ax.set_xlabel('$\phi$ (deg)')
+            x_vector = x_vector*1e-6
+            ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
+            ax.plot(x_vector,self.cos(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3]),'r')
+            ax.set_title(f'Virtual Z-Gate Measurement {self.iteration:03d}')
+            textstr = f'$T_\pi$={self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$N$ = {self.exp_pars["n_avg"]}'
+
 
         elif self.exp == "echo":
 
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
             ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
             ax.set_ylabel('Digitizer Voltage (mV)')
             ax.set_xlabel('Pulse Separation ($\mu$s)')
             ax.plot(x_vector,self.decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
-            textstr = f'$T_pi2$ = {self.qb_pars["pi_len"]:.1f} ns\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n$T_2^E$ = {fitted_pars[1]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
+            textstr = f'$T_\pi$ = {self.qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {self.qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$T_2^E$ = {fitted_pars[1]:.1f} $\mu$s\n$N$ = {self.exp_pars["n_avg"]}'
             ax.set_title(f'Echo Measurement {self.iteration:03d}')
 
 
@@ -2477,43 +2679,6 @@ class qubit():
 
         return fig
 
-    def extract_data(self,sweep,B0,nu,tauk,meas_device='CandleQubit_6',nMeasurements=100,nBackMeasurements=100,fileformat='new',sequence='ramsey',iteration=1):
-
-        # get data
-        if fileformat == 'old':
-            filename = 'B0_%d_uV_nu_%d_kHz_tau_%d_ns' %(round(B0*1e6),round(nu*1e3),round(tauk*1e3))
-            datafile = "E:\\generalized-markovian-noise\\%s\\sweep_data\\ramsey\\%s\\data\\data_%s.csv"%(meas_device,sweep,filename)
-            tdata_background = pd.read_csv(datafile,on_bad_lines='skip',skiprows=3,header=None,nrows=1).dropna(axis='columns').to_numpy(np.float64)[0]
-            tdata = pd.read_csv(datafile,on_bad_lines='skip',skiprows=5,header=None,nrows=1).dropna(axis='columns').to_numpy(np.float64)[0]
-            ydata_background = pd.read_csv(datafile,on_bad_lines='skip',skiprows=7,header=None,nrows=nBackMeasurements).dropna(axis='columns').to_numpy(np.float64)
-            ydata = pd.read_csv(datafile,on_bad_lines='skip',skiprows=7+2*(nBackMeasurements+1),header=None,nrows=nMeasurements).dropna(axis='columns').to_numpy(np.float64)
-            # get exp parameters
-            pars = pd.read_csv(datafile,on_bad_lines='skip',header=[0],nrows=1)
-            keys = pars.keys()
-            values = pars.values
-            dictionary = {"mu":loads(pars.loc[0].at['AC_pars'])[0],
-                          "sigma":loads(pars.loc[0].at['AC_pars'])[1],
-                          "B0":loads(pars.loc[0].at['RT_pars'])[0],
-                          # "nu": loads(pars.loc[0].at['RT_pars'])[1],
-                          "tauk":loads(pars.loc[0].at['RT_pars'])[1]}
-        elif fileformat == 'new':
-            # cols_background = [i for i in range(0,94)]
-            # cols = [i for i in range(0,250)]
-            filename = 'B0_%d_uV_nu_%d_Hz_tau_%d_ns' %(round(B0*1e6),round(nu*1e3),round(tauk*1e3))
-            # filename = 'B0_%d_uV_nu_%d_Hz_tau_%d_ns_%d' %(round(B0*1e6),round(nu*1e3),round(tauk*1e3),iteration)
-            datafile = "E:\\generalized-markovian-noise\\%s\\sweep_data\\%s\\%s\\data\\data_%s.csv"%(meas_device,sequence,sweep,filename)
-            tdata_background = pd.read_csv(datafile,on_bad_lines='skip',skiprows=3,header=None,nrows=1).to_numpy(np.float64)[0]
-            tdata = pd.read_csv(datafile,on_bad_lines='skip',skiprows=5,header=None,nrows=1).to_numpy(np.float64)[0]
-            ydata_background = pd.read_csv(datafile,on_bad_lines='skip',skiprows=7,header=None,nrows=nBackMeasurements).to_numpy(np.float64)
-            ydata = pd.read_csv(datafile,on_bad_lines='skip',skiprows=7+nBackMeasurements+1,header=None,nrows=nMeasurements).to_numpy(np.float64)
-            # get exp parameters
-            pars = pd.read_csv(datafile,on_bad_lines='skip',header=[0],nrows=1)
-            keys = pars.keys()
-            values = pars.values
-            dictionary = dict(zip(keys,values[0]))
-        #print(dictionary)
-
-        return tdata_background, ydata_background, tdata, ydata, dictionary
 
 
     def rabi(self,x, amp,period,phase,offset):
@@ -2531,13 +2696,15 @@ class qubit():
     def ramsey(self,x,amp,f,phase,tau,offset):
         return amp*np.cos(2*pi*f*x+phase)*np.exp(-x/tau)+offset
     
-
     def beats(self,x,amp,f1,f2,phase1,phase2,tau,offset):
         return amp*np.cos(pi*(f1+f2)*x+phase1)*np.cos(pi*(f2-f1)*x+phase2)*np.exp(-x/tau)+offset
 
     def decay(self,x,amp,tau,offset):
         return amp*np.exp(-x/tau)+offset
 
+    def cos(self,x,amp,f,phase,offset):
+        return amp*np.cos(2*pi*f*x+phase)+offset
+    
     def mod_cos(self,x,amp,B0,nu,phi1,phi2,tau,offset):
         return amp*np.cos(B0/nu*np.sin(2*np.pi*nu*x+phi1)+phi2)*np.exp(-x/tau)+offset
         # return amp*np.cos(np.cos(nu*x)*f*x)*np.exp(-x/tau)+offset

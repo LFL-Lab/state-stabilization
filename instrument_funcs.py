@@ -16,41 +16,42 @@ import json
 
 client = Labber.connectToServer()
 
-def set_qb_LO(freq,sweep=False):
+def set_LO(inst,freq,sweep=False):
+    
     if not sweep:
-        print(f'Setting qubit LO to {round(freq*1e-9,5)} GHz')
-    # initialize qubit LO
-    qLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='qubit', startup = 'Get config'))
-    qLO.startInstrument()
-    qLO.setValue('Frequency', freq)
-    qLO.setValue('Output',True)
+        print(f'Setting {inst} LO to {round(freq*1e-9,5)} GHz')
+    # initialize LO
+    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Get config'))
+    LO.startInstrument()
+    LO.setValue('Frequency', freq)
+    LO.setValue('Output',True)
 
-def get_qb_LO():
+def get_LO(inst):
     # initialize qubit LO
-    qLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='qubit', startup = 'Get config'))
-    qLO.startInstrument()
-    return qLO.getValue('Frequency')
+    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Get config'))
+    LO.startInstrument()
+    return LO.getValue('Frequency')
 
-def set_rr_LO(freq,sweep=False):
-    if not sweep:
-        print(f'Setting readout LO to {round(freq*1e-9,5)} GHz')
-    # initialize readout LO
-    rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
-    rrLO.startInstrument()
-    rrLO.setValue('Frequency', freq)
-    rrLO.setValue('Output',True)
+# def set_rr_LO(freq,sweep=False):
+#     if not sweep:
+#         print(f'Setting readout LO to {round(freq*1e-9,5)} GHz')
+#     # initialize readout LO
+#     rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
+#     rrLO.startInstrument()
+#     rrLO.setValue('Frequency', freq)
+#     rrLO.setValue('Output',True)
 
-def get_rr_LO():
+# def get_rr_LO():
+#     # initialize qubit LO
+#     rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
+#     rrLO.startInstrument()
+#     return rrLO.getValue('Frequency')
+
+def set_output(inst,output=True):
     # initialize qubit LO
-    rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
-    rrLO.startInstrument()
-    return rrLO.getValue('Frequency')
-
-def set_rr_output(output=True):
-    # initialize qubit LO
-    rrLO = client.connectToInstrument('BNC 845 Signal Generator', dict(name='readout', startup = 'Get config'))
-    rrLO.startInstrument()
-    return rrLO.setValue('Output',output)
+    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Get config'))
+    LO.startInstrument()
+    return LO.setValue('Output',output)
 
 def set_attenuator(attenuation):
     # initialize digital attenuator

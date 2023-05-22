@@ -184,7 +184,7 @@ def error_check(func):
         if status != 0:
             print (f"{'Error' if status < 0 else 'Warning'} {status}: {sa_get_error_string(status)} in {func.__name__}()")
         if status < 0:
-            exit()
+            pass
         return return_vars
     return print_status_if_error
 
@@ -210,9 +210,9 @@ def sa_open_device():
     }
 
 @error_check
-def sa_close_device(device):
+def sa_close_device():
     return {
-        "status": saCloseDevice(device)
+        "status": saCloseDevice()
     }
 
 @error_check

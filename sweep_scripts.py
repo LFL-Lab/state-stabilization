@@ -39,28 +39,30 @@ for i in pi_amp:
     qb.plot_single_shot(data)
 
 
+#%% Punchout Measurement
 '''------------------------------------------------------Punchout----------------------------------------------'''
 
 
-freqs = np.arange(start=6.702,stop=6.706,step=20e-6) # frequencies are in GHz
-atten = np.arange(5,30,1)
+freqs = np.arange(start=6.701,stop=6.707,step=20e-6) # frequencies are in GHz
+atten = np.arange(1,50,0.5)
 p_data = np.zeros((len(atten),len(freqs)))
+
 qb.exp_pars = {
     'n_avg':                256,
-    'qubit_reset_time':     10e-6,
-    'amp_q':                0.1,
-    'satur_dur':            4e-6,
+    'element':              'rr',
+    'rr_reset_time':        10e-6,
+    'satur_dur':            2e-6,
     'rr_atten':             0,
-    'on_off':               False,
+    'on_off':               True,
     }
 
 for i,a in enumerate(atten):
     qb.exp_pars['rr_atten'] = a
-    p_data[i,:],I,Q = qb.spectroscopy(element='resonator',freqs=freqs)
+    p_data[i,:],I,Q = qb.spectroscopy(freqs=freqs)
     # qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
     
-qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data,xlabel='Frequency (GHz)',ylabel='Attenuation (dB)',
-            cbar_label='Magnitude (mV)',title='Punchout Measurement')
+qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
+            ylabel='Attenuation (dB)', normalize = True,cbar_label='Magnitude (mV)',title='Punchout Measurement')
 
 
 '''------------------------------------------------------Sweep Rabi Amplitude----------------------------------------------'''

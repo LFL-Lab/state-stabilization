@@ -19,16 +19,17 @@ freqs = np.arange(start=6.702,stop=6.706,step=20e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'n_avg':                256,
-    'qubit_reset_time':     10e-6,
+    'element':              'rr',
+    'rr_reset_time':        10e-6,
     'amp_q':                0.1,
-    'satur_dur':            4e-6,
-    'rr_attenuation':       0,
-    'on_off':               False,
+    'satur_dur':            2e-6,
+    'rr_atten':             25,
+    'on_off':               True,
     }
 
 
-p_data,I,Q = qb.spectroscopy('resonator',freqs)
-qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+p_data,I,Q = qb.spectroscopy(freqs)
+qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
@@ -39,11 +40,11 @@ qb.exp_pars = {
     'qubit_reset_time':     200e-6,
     'amp_q':                0.1,
     'satur_dur':            40e-6,
-    'rr_attenuation':       15,
+    'rr_atten':             15,
     'on_off':               True,
     }
 
-p_data,I,Q = qb.spectroscopy('qubit',freqs)
+p_data,I,Q = qb.spectroscopy(freqs)
 qb.qb_spec_plot(freq=freqs,I=I,Q=Q,find_peaks=True)
 
 
@@ -185,7 +186,7 @@ qb.plot_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars)
 
 #%% Mixer Optimization
 qb.min_leak(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],mixer='qubit',mode='coarse',plot=True)
-qb.min_leak(inst=qb.qa,mixer='resonator',mode='coarse',plot=True)
+qb.min_leak(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],mixer='rr',mode='coarse',plot=True)
 
 qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF'],mode='coarse')
 qb.suppr_image(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],f_IF=qb.qb_pars['rr_IF'],mode='coarse',amp=0.3)

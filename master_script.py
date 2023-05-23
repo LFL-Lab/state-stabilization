@@ -6,7 +6,6 @@ Created on Thu Apr 14 11:35:33 2022
 
 
 from qubit import qubit
-from tqdm import tqdm
 import numpy as np
 
 qb_name = 'qb6'

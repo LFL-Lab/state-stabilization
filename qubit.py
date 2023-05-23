@@ -70,7 +70,7 @@ class qubit():
     
     #%% INITIALIZATION
     
-''' Dictionary of Default Parameters for experiment '''
+    ''' Dictionary of Default Parameters for experiment '''
     default_qb_pars = {
                     "qb_LO":                     3.829e9,
                     "qb_freq":                   3.879e9,
@@ -155,7 +155,7 @@ class qubit():
             ['/dev2528/sigouts/1/offset', self.qb_pars['rr_mixer_offsets'][1]],
             ['/dev2528/system/jumbo', 1], # enables jumbo frames for faster connection | make sure you enable jumbo frames in windows network settings (how-to link:https://elements.tv/blog/achieve-maximum-ethernet-performance/)
             ['/dev2528/qas/0/integration/sources/0', 0], #sets channel mapping
-            ['/dev2528/awgs/0/outputs/0/modulation/mode' , 0],
+            # ['/dev2528/awgs/0/outputs/0/modulation/mode' , 0],
             ['/dev2528/qas/0/delay',round(qa_delay*1.8e9)], # sets delay between trigger receive and start of integration
             ['/dev2528/qas/0/integration/mode', 0], # 0 for standard (4096 samples max), 1 for spectroscopy
             ['/dev2528/oscs/0/freq', self.qb_pars['rr_IF']], # sets the oscillator freq
@@ -988,7 +988,7 @@ class qubit():
         bypass_crosstalk=0
         L = self.roundToBase(self.qb_pars['readout_length']*1.8e9)
         # set modulation frequency of QA AWG to some IF and adjust input range for better resolution
-        self.qa.setDouble('/dev2528/sigins/0/range',0.5)
+        self.qa.setDouble('/dev2528/sigins/0/range',1.5)
         # self.qa.setInt('/dev2528/oscs/0/freq'.format(device),int(rr_IF))
         # self.qa.setInt('/dev2528/awgs/0/outputs/0/mode', 1) # AWG set to modulation mode
 

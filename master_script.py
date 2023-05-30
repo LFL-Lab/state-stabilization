@@ -2,25 +2,25 @@
 Created on Thu Apr 14 11:35:33 2022
 
 @author: Evangelos Vlachos <evlachos@usc.edu>
+@edits: Malida Hecht <mohecht@usc.edu>
 """
 
-
+#%% Initialization
 from qubit import qubit
 import numpy as np
 
-qb_name = 'qb6'
+qb_name = 'qb3'
 qb = qubit(qb_name)
 
-#%% Spectroscopy
+#%% Spectroscopy (Resonator)
 '''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=6.702,stop=6.706,step=20e-6) # frequencies are in GHz
+freqs = np.arange(start=6.46,stop=6.48,step=50e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                256,
+    'n_avg':                512,
     'element':              'rr',
-    'rr_reset_time':        10e-6,
-    'amp_q':                0.1,
+    'rr_reset_time':        50e-6,
     'satur_dur':            2e-6,
     'rr_atten':             25,
     'on_off':               True,
@@ -28,23 +28,30 @@ qb.exp_pars = {
 
 
 p_data,I,Q = qb.spectroscopy(freqs)
-qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+fc = qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+qb.update_qb_value('rr_LO',fc*1e9)
+
+#%% Spectroscopy (Qubit)
+
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=3.871,stop=3.885,step=10e-6) # frequencies are in GHz
+freqs = np.arange(start=4.1,stop=4.4,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                1024,
-    'qubit_reset_time':     200e-6,
+    'n_avg':                2048,
+    'element':              'qubit',
+    'qubit_reset_time':     150e-6,
     'amp_q':                0.1,
     'satur_dur':            40e-6,
-    'rr_atten':             15,
+    'rr_atten':             22,
     'on_off':               True,
     }
 
 p_data,I,Q = qb.spectroscopy(freqs)
-qb.qb_spec_plot(freq=freqs,I=I,Q=Q,find_peaks=True)
+qb.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,find_pks=True)
+
+## Need to add title to this plot ^^
 
 
 #%% Time Rabi
@@ -187,8 +194,9 @@ qb.plot_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars)
 qb.min_leak(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],mixer='qubit',mode='coarse',plot=True)
 qb.min_leak(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],mixer='rr',mode='coarse',plot=True)
 
+#f
 qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF'],mode='coarse')
-qb.suppr_image(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],f_IF=qb.qb_pars['rr_IF'],mode='coarse',amp=0.3)
+qb.suppr_image(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],f_IF=qb.qb_pars['rr_IF'],mode='coarse',amp=1)
 
 
 

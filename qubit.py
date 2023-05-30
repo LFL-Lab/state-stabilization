@@ -27,8 +27,9 @@ import seaborn as sns; sns.set() # styling
 from scipy.signal import butter,lfilter,freqz,find_peaks,peak_widths
 import re
 import pandas as pd
-
-
+import colorama
+from colorama import Fore
+red = Fore.RED
 pi=np.pi        
 
 ''' Plotting Parameters '''
@@ -84,10 +85,11 @@ class qubit():
                     "gauss_amp":                    0.45,
                     "rr_LO":                        6.70438e9,
                     "rr_freq":                      6.4749e9,
-                    'rr_IF':                        0,
+                    'rr_IF':                        50e6,
                     "rr_mixer_offsets":             [0,0],
                     "rr_mixer_imbalance":           [0,0],
                     "amp_r":                        0.45,
+                    "readout_length":               5e-6,
                     'rr_atten':                     25,
                     "rr_resettime":                 0.5e-6,
                     'cav_resp_time':                0.5e-6,
@@ -150,7 +152,7 @@ class qubit():
             ['/dev2528/system/extclk', 1], # sets clock reference to external 10MHz
             ['/dev2528/sigouts/*/range',1.5], #sets output range to 150mV
             ['/dev2528/sigouts/*/on', 1], #turn on outputs 1 and 2
-            ['/dev2528/sigins/0/range', 0.8],  #sets input range to 500mV
+            ['/dev2528/sigins/0/range', 1.5],  #sets input range to 500mV
             ['/dev2528/sigouts/0/offset', self.qb_pars['rr_mixer_offsets'][0]],
             ['/dev2528/sigouts/1/offset', self.qb_pars['rr_mixer_offsets'][1]],
             ['/dev2528/system/jumbo', 1], # enables jumbo frames for faster connection | make sure you enable jumbo frames in windows network settings (how-to link:https://elements.tv/blog/achieve-maximum-ethernet-performance/)
@@ -315,9 +317,10 @@ class qubit():
         if self.exp_pars['element'] == 'rr':
             instfuncs.set_output('qubit',False)
             inst = self.qa
+            #print('doing resonator spectroscopy')
         else:
             inst = self.awg
-            instfuncs.set_output('rr',False)
+            instfuncs.set_output('rr',True)
             instfuncs.set_LO('rr',self.qb_pars['rr_LO'])
             
         self.exp = 'spectroscopy'
@@ -330,6 +333,8 @@ class qubit():
         self.n_steps = result_length
             
         instfuncs.set_attenuator(self.exp_pars['rr_atten'])
+        #print('setting attenuator to ',self.exp_pars['rr_atten'])
+        
         # readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
         
         # set up HDAWG and UHFQA sequences
@@ -337,23 +342,47 @@ class qubit():
         # setup qa for integration
         self.config_qa(result_length=result_length,source=7)
         
-        print('Start measurement')
+        print('Start measurement\n')
         sweep_data, paths = self.create_sweep_data_dict()
         data_ON = []
         data_OFF = []
-
-        self.enable_awg(self.qa) # start the readout sequence
+        
+        self.qa.set('/dev2528/awgs/0/single', 1)
+        
+        if self.exp_pars['element'] == 'qubit':
+            self.enable_awg(self.qa) # start the readout sequence
+        
         
         bt = time.time()
+        errors = 0
+        # self.enable_awg(inst) #runs the drive sequence
         
         with tqdm(total = len(freqs)) as progress_bar:
             for f in freqs:
                 instfuncs.set_LO(self.exp_pars['element'],f*1e9,sweep=True) # updates frequency
                 self.qa_result_reset()
+                # self.qa.sync()
                 # self.qa_result_enable()
                 self.enable_awg(inst) #runs the drive sequence
-                data = self.acquisition_poll(paths, result_length, timeout = 10) # transfers data from the QA result to the API for this frequency point
-                self.qa.sync()
+                # self.qa.sync()
+            #fw_load =int( self.qa.get('/dev2528/raw/stats/fwload')['dev2528']['raw']['stats']['fwload']['value'][0] * 100 )
+            #if fw_load>90:
+            #    print('WARNING Firmware load is at:', fw_load,'\n')
+            #    print('frequency is:', f)
+                try:
+                    data = self.acquisition_poll(paths, result_length, timeout = 10) # transfers data from the QA result to the API for this frequency point
+                except:
+                    print('Error! Unable to retrieve data from Quantum Analyzer. Trying again')
+                    self.qa_result_reset()
+                    self.enable_awg(self.qa,enable=0)
+                    self.enable_awg(self.qa,enable=1)
+                    self.enable_awg(inst)
+                    data = self.acquisition_poll(paths, result_length, timeout = 10)
+                    errors += 1
+                # self.qa.sync()
+                #checking firmware load
+            #fw_load = self.qa.get('/dev2528/raw/stats/fwload')['dev2528']['raw']['stats']['fwload']['value'][0] * 100
+            #print('MEASUREMENT DONE Firmware load is at:', int(fw_load))
                 # seperate OFF/ON data and average
                 if self.exp_pars['on_off']:
                     data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
@@ -361,10 +390,10 @@ class qubit():
                 else:
                     data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
                 progress_bar.update(1)
-
+                
         et = time.time()
         duration = et-bt
-        print(f'Measurement time: {duration:.1f} seconds')
+        print(f'Measurement time: {duration:.1f} seconds | {errors} errors')
 
         norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
         
@@ -881,12 +910,12 @@ class qubit():
         
         self.qa_sequence = Sequence()
         self.qa_sequence.code = """
-
+        while (true) {
         repeat(n_avg) {
             waitDigTrigger(1,1);
             startQA();
             playWave(1,ro_pulse_I,2,ro_pulse_Q);
-        }
+        }}
         """
         
         self.qa_sequence.waveforms = Waveforms() # initialize waveforms
@@ -960,33 +989,41 @@ class qubit():
             awg_program = '''       
     
             // Beginning of the core sequencer program executed on the HDAWG at run time
+            while (true) {
             repeat(n_avg) {
                 // OFF Measurement
-                startQA(QA_INT_0, true);
+                startQA();
                 playZero(rr_reset_time,AWG_RATE_225MHZ);
                 // ON measurement
                 playWave(1,w_const,2,w_zero,AWG_RATE_225MHZ);
-                startQA(QA_INT_0, true);
+                startQA();
                 playZero(rr_reset_time,AWG_RATE_225MHZ);
-                        }'''
+                }
+            wait(1000000);
+                }'''
         else:
             awg_program = '''       
     
             // Beginning of the core sequencer program executed on the HDAWG at run time
-    
-            repeat(n_avg) {
-                playWave(1,w_const,2,w_zero,AWG_RATE_225MHZ);
-                startQA(QA_INT_0, true);
-                playZero(rr_reset_time,AWG_RATE_225MHZ);
-                        }'''
+            while (true) {
+                repeat(n_avg) {
+                    playWave(1,w_const,2,w_zero,AWG_RATE_225MHZ);
+                    startQA();
+                    playZero(rr_reset_time,AWG_RATE_225MHZ);
+                            }
+                wait(1000000);
+            }'''
             
         return awg_program
     
-    def config_qa(self,result_length=1,delay=300e-9,source=7):
+    def config_qa(self,result_length=1,source=7):
         # print('-------------Configuring QA-------------\n')
         base_rate=1.8e9
+        #base_rate=2.25e6
+        # delay = round(self.qb_pars['cav_resp_time']*base_rate)
+        delay = 0
         bypass_crosstalk=0
-        L = self.roundToBase(self.qb_pars['readout_length']*1.8e9)
+        L = self.roundToBase(self.qb_pars['readout_length']*base_rate)
         # set modulation frequency of QA AWG to some IF and adjust input range for better resolution
         self.qa.setDouble('/dev2528/sigins/0/range',1.5)
         # self.qa.setInt('/dev2528/oscs/0/freq'.format(device),int(rr_IF))
@@ -994,7 +1031,7 @@ class qubit():
 
         # QA setup Settings
         self.qa.setInt('/dev2528/qas/0/integration/sources/0', 0)
-        self.qa.setInt('/dev2528/qas/0/delay',round(self.qb_pars['cav_resp_time']*base_rate))
+        self.qa.setInt('/dev2528/qas/0/delay',delay)
         # if sequence =='spec':
         #     self.qa.setInt('/dev2528/qas/0/integration/mode'.format(device), 0) # 0 for standard (4096 samples max), 1 for spectroscopy
         # elif sequence =='pulse':
@@ -1111,7 +1148,9 @@ class qubit():
                 num_obtained = sum([len(x) for x in chunks[p]])
                 print('Path {}: Got {} of {} samples'.format(p, num_obtained, num_samples))
             raise Exception('Timeout Error: Did not get all results within {:.1f} s!'.format(timeout))
-
+        #fw_load = self.qa.get('/dev2528/raw/stats/fwload')['dev2528']['raw']['stats']['fwload']['value'][0] * 100
+        #print('AQUISITION POLL Firmware load is at:', int(fw_load))
+            
         # Return dict of flattened data
         return {p: np.concatenate(v) for p, v in chunks.items()} 
     
@@ -1661,11 +1700,11 @@ class qubit():
         
         start = time.time()
         if mode == 'coarse':
-            span = 10e-3
-            dV = 1e-3
+            span = 20e-3
+            dV = 2e-3
         elif mode == 'fine':
             span = 2e-3
-            dV = 0.1e-3
+            dV = 0.2e-3
 
         # generate arrays for optimization parameters
         vStart = np.zeros(2)
@@ -2245,17 +2284,16 @@ class qubit():
         plt.legend(["adc1", "adc2"])
         plt.show()
         
-    def qb_spec_plot(self,freq,I,Q,attenuation=-30,find_peaks=False):
+    def qb_spec_plot(self,freq,I,Q,mag,attenuation=-30,find_pks=False):
 
         I = I*1e3
         Q = Q*1e3
-        mag = np.abs(I+1j*Q)
 
         phase = np.unwrap(np.angle(I+1j*Q))
-        if find_peaks:
+        if find_pks:
             sigma = np.std(mag)
             print(f'Peak threshold at {np.mean(mag)+3*sigma:.1f}')
-            peaks,_ = scy.signal.find_peaks(mag,height=np.mean(mag)+3*sigma,distance=200,width=3)
+            peaks,_ = find_peaks(mag,height=np.mean(mag)+3*sigma,distance=200,width=3)
             try:
                 for i in peaks:
                     print(f'Peaks at: {round(freq[i],5)} GHz\n')
@@ -2286,13 +2324,13 @@ class qubit():
         # ax1.set_ylabel('Phase (rad)')
 
         if len(peaks) == 2:
-            txt = '$\omega_{01}$ = %.4f GHz\n$\omega_{12}$ = %.4f GHz\n$\\alpha$ = %.1f MHz\n$A_{qb}$ = %.2f V\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(freq[peaks[1]],freq[peaks[0]],(freq[peaks[0]]-freq[peaks[1]])*1e3,self.exp_pars['amp_q'],self.exp_pars['rr_attenuation'],(self.qb_pars['rr_LO']+self.qb_pars['rr_IF'])*1e-9)
+            txt = '$\omega_{01}$ = %.4f GHz\n$\omega_{12}$ = %.4f GHz\n$\\alpha$ = %.1f MHz\n$A_{qb}$ = %.2f V\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(freq[peaks[1]],freq[peaks[0]],(freq[peaks[0]]-freq[peaks[1]])*1e3,self.exp_pars['amp_q'],self.exp_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
         elif len(peaks) == 1:
-            txt = '$\omega_{01}$ = %.4f GHz\n$A_{qb}$ = %.1f mV\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(freq[peaks[0]],self.exp_pars['amp_q']*1e3,self.exp_pars['rr_attenuation'],(self.qb_pars['rr_LO']+self.qb_pars['rr_IF'])*1e-9)
+            txt = '$\omega_{01}$ = %.4f GHz\n$A_{qb}$ = %.1f mV\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(freq[peaks[0]],self.exp_pars['amp_q']*1e3,self.exp_pars['rr_attenuation'],self.qb_pars['rr_LO']*1e-9)
         else:
-            txt = '$A_{qb}$ = %.1f mV\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(self.exp_pars['amp_q']*1e3,self.exp_pars['rr_attenuation'],(self.qb_pars['rr_LO']+self.qb_pars['rr_IF'])*1e-9)
+            txt = '$A_{qb}$ = %.1f mV\nReadout Attn = %d dBm\n$f_r$ = %.4f GHz'%(self.exp_pars['amp_q']*1e3,self.exp_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
         plt.gcf().text(1, 0.15, txt, fontsize=14)
-        # fig.set_title(f'Qubit spectroscopy {self.iteration}')
+        ax1.set_title(f'{self.exp_pars["element"]} spectroscopy {self.iteration}')
         plt.tight_layout()
         plt.show()
         
@@ -2300,7 +2338,8 @@ class qubit():
 
         I = I*1e3
         Q = Q*1e3
-        mag = mag*1e3
+        freq = freq[1:]
+        mag = mag[1:]*1e3
         
         if find_peaks:
             sigma = np.std(mag)
@@ -2312,7 +2351,12 @@ class qubit():
             except:
                 print('Peaks not found or do not exist.')
                 
-        fc,fwhm = self.fit_res(freq,mag)
+        try: 
+            fc,fwhm = self.fit_res(freq,mag)
+        except:
+            print('Center Frequency not found')
+            fc = 0
+            fwhm = 0
 
         fig = plt.figure(figsize=(5,4))
 
@@ -2332,6 +2376,8 @@ class qubit():
         ax1.set_title(f'{self.exp_pars["element"]} spectroscopy {self.iteration}')
         plt.tight_layout()
         plt.show()
+        
+        return fc
 
     def init_IQ_plot(self,):
         '''initialize axes for continuous plotting on the IQ plane'''
@@ -2443,10 +2489,10 @@ class qubit():
 
 
     def fit_res(self,f_data,z_data,res_type='notch'):
-        fc = f_data[np.argmax(z_data)]
+        fc = f_data[np.argmin(z_data)]
         if res_type == 'notch':
-            z_data = z_data-min(z_data)
-            idx = np.argwhere(np.diff(np.sign(z_data - 0.5*max(z_data)))).flatten()
+            # z_data = z_data-min(z_data)
+            idx = np.argwhere(np.diff(np.sign(-z_data + 0.5*max(z_data)))).flatten()
             fwhm = f_data[idx[1]] - f_data[idx[0]]
 
         return fc,fwhm

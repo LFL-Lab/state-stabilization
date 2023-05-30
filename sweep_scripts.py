@@ -44,7 +44,8 @@ for i in pi_amp:
 
 
 freqs = np.arange(start=6.701,stop=6.707,step=20e-6) # frequencies are in GHz
-atten = np.arange(1,50,0.5)
+atten = np.arange(0,10,2)
+#print(atten)
 p_data = np.zeros((len(atten),len(freqs)))
 
 qb.exp_pars = {
@@ -59,12 +60,14 @@ qb.exp_pars = {
 for i,a in enumerate(atten):
     qb.exp_pars['rr_atten'] = a
     p_data[i,:],I,Q = qb.spectroscopy(freqs=freqs)
+    qb.qa_result_reset()
+    time.sleep(0.1)
     # qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
     
 qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
             ylabel='Attenuation (dB)', normalize = True,cbar_label='Magnitude (mV)',title='Punchout Measurement')
 
-
+#%%
 '''------------------------------------------------------Sweep Rabi Amplitude----------------------------------------------'''
 
 try:

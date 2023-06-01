@@ -15,10 +15,10 @@ qb = qubit(qb_name)
 #%% Spectroscopy (Resonator)
 '''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=6.46,stop=6.48,step=50e-6) # frequencies are in GHz
+freqs = np.arange(start=6.468,stop=6.478,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                512,
+    'n_avg':                256,
     'element':              'rr',
     'rr_reset_time':        50e-6,
     'satur_dur':            2e-6,
@@ -27,7 +27,7 @@ qb.exp_pars = {
     }
 
 
-p_data,I,Q = qb.spectroscopy(freqs)
+p_data,I,Q = qb.rr_spectroscopy(freqs)
 fc = qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
 qb.update_qb_value('rr_LO',fc*1e9)
 
@@ -36,19 +36,19 @@ qb.update_qb_value('rr_LO',fc*1e9)
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=4.1,stop=4.4,step=100e-6) # frequencies are in GHz
+freqs = np.arange(start=4.0,stop=4.3,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'n_avg':                2048,
     'element':              'qubit',
     'qubit_reset_time':     150e-6,
-    'amp_q':                0.1,
+    'amp_q':                0.025,
     'satur_dur':            40e-6,
-    'rr_atten':             22,
+    'rr_atten':             21,
     'on_off':               True,
     }
 
-p_data,I,Q = qb.spectroscopy(freqs)
+p_data,I,Q = qb.qb_spectroscopy(freqs)
 qb.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,find_pks=True)
 
 ## Need to add title to this plot ^^

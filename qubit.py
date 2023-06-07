@@ -69,7 +69,7 @@ project =  'dynamical-decoupling'
 
 class qubit():
     
-    #%% INITIALIZATION
+    #%% Initialization        
     
     ''' Dictionary of Default Parameters for experiment '''
     default_qb_pars = {
@@ -317,15 +317,17 @@ class qubit():
         self.exp = 'spectroscopy'
         
         if self.exp_pars['on_off']:
-            result_length = 2*self.exp_pars['n_avg']
+            # result_length = 2*self.exp_pars['n_avg']
+            result_length = 2
         else:
-            result_length = self.exp_pars['n_avg']
+            # result_length = self.exp_pars['n_avg']
+            result_length = 1
         self.n_steps = result_length
             
         instfuncs.set_attenuator(self.exp_pars['rr_atten'])
         #print('setting attenuator to ',self.exp_pars['rr_atten'])
         
-        # readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
+        readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
         
         # set up HDAWG and UHFQA sequences
         self.pulsed_rr_spec_setup() 
@@ -334,6 +336,7 @@ class qubit():
         
         print('Start measurement\n')
         sweep_data, paths = self.create_sweep_data_dict()
+        # wave_data_captured = self.subscribe_nodes()
         data_ON = []
         data_OFF = []
         
@@ -356,14 +359,23 @@ class qubit():
             #    print('WARNING Firmware load is at:', fw_load,'\n')
             #    print('frequency is:', f)
                 try:
-                    data = self.acquisition_poll(paths, result_length, timeout = 10) # transfers data from the QA result to the API for this frequency point
+                    data = self.acquisition_poll(paths, result_length, timeout = 5) # transfers data from the QA result to the API for this frequency point
+                    # data = self.get_data(wave_data_captured,result_length,timeout=10)
+                    # print(data)
                 except:
                     print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
-                    time.sleep(5)
-                    self.qa_result_reset()
+                    
+                    time.sleep(30)
+                    try:
+                        self.qa_result_reset()
+                    except:
+                        print('Lost connection to UHFQA! Attempting to reconnect')
+                        self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
+                        self.qa_ses = self.session.connect_device('DEV2528')
                     # self.enable_awg(self.qa,enable=0)
                     # self.enable_awg(self.qa,enable=1)
                     self.enable_awg(inst)
+                    # data = self.get_data(wave_data_captured,result_length,timeout=10)
                     data = self.acquisition_poll(paths, result_length, timeout = 10)
                     errors += 1
                 # self.qa.sync()
@@ -372,11 +384,15 @@ class qubit():
             #print('MEASUREMENT DONE Firmware load is at:', int(fw_load))
                 self.qa_result_reset()    
                 # seperate OFF/ON data and average
+                # data = self.sort_data(data)
                 if self.exp_pars['on_off']:
-                    data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
-                    data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+                   # data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
+                   # data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+                   data_OFF = np.append(data_OFF,data[paths[0]][0])
+                   data_ON = np.append(data_ON,data[paths[0]][1])
                 else:
-                    data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
+                   # data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
+                   data_ON = np.append(data_ON,data[paths[0]][0])
                 progress_bar.update(1)
                 
         et = time.time()
@@ -418,9 +434,11 @@ class qubit():
         self.exp_pars['fsAWG'] = 600e6
         
         if self.exp_pars['on_off']:
-            result_length = 2*self.exp_pars['n_avg']
+            # result_length = 2*self.exp_pars['n_avg']
+            result_length = 2
         else:
-            result_length = self.exp_pars['n_avg']
+            # result_length = self.exp_pars['n_avg']
+            result_length = 1
         self.n_steps = result_length
             
         #print('setting attenuator to ',self.exp_pars['rr_atten'])
@@ -458,15 +476,18 @@ class qubit():
             #    print('WARNING Firmware load is at:', fw_load,'\n')
             #    print('frequency is:', f)
                 try:
-                    data = self.acquisition_poll(paths, result_length, timeout = 10) # transfers data from the QA result to the API for this frequency point
+                    data = self.acquisition_poll(paths, result_length, timeout = 5) # transfers data from the QA result to the API for this frequency point
                 except:
                     print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
-                    time.sleep(5)
-                    self.qa_result_reset()
-                    # self.enable_awg(self.qa,enable=0)
-                    # self.enable_awg(self.qa,enable=1)
+                    time.sleep(30)
+                    try:
+                        self.qa_result_reset()
+                    except:
+                        print('Lost connection to UHFQA! Attempting to reconnect')
+                        self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
+                        self.qa_ses = self.session.connect_device('DEV2528')
                     self.enable_awg(inst)
-                    data = self.acquisition_poll(paths, result_length, timeout = 10)
+                    data = self.acquisition_poll(paths, result_length, timeout = 5)
                     errors += 1
                 # self.qa.sync()
                 #checking firmware load
@@ -474,10 +495,14 @@ class qubit():
             #print('MEASUREMENT DONE Firmware load is at:', int(fw_load))
                 # seperate OFF/ON data and average
                 if self.exp_pars['on_off']:
-                    data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
-                    data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+                    # data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
+                    # data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+                    # print(data[paths[0]][0])
+                    data_OFF = np.append(data_OFF,data[paths[0]][0])
+                    data_ON = np.append(data_ON,data[paths[0]][1])
                 else:
-                    data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
+                    # data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
+                    data_ON = np.append(data_ON,data[paths[0][0]])
                 progress_bar.update(1)
                 
         et = time.time()
@@ -574,8 +599,8 @@ class qubit():
         self.enable_awg(self.awg,enable=1) #runs the drive sequence
         data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2*timeout) # retrieve data from UHFQA
 
-        for path, samples in data.items():
-            sweep_data[path] = np.append(sweep_data[path], samples) 
+        # for path, samples in data.items():
+        #     sweep_data[path] = np.append(sweep_data[path], samples) 
 
         # reset QA result unit and stop AWGs
         self.stop_result_unit(paths)
@@ -780,7 +805,7 @@ class qubit():
                     self.hdawg_core.awgs[0].load_sequencer_program(self.sequence)
         elif inst == self.qa:
             with self.hdawg_core.set_transaction():
-                self.qa_awg_core.awgs[0].load_sequencer_program(self.sequence)
+                self.qa_ses.awgs[0].load_sequencer_program(self.sequence)
             
         
     def spec_sequence(self):
@@ -999,8 +1024,9 @@ class qubit():
         while (true) {
         repeat(n_avg) {
             waitDigTrigger(1,1);
-            startQA();
             playWave(1,ro_pulse_I,2,ro_pulse_Q);
+            wait(delay);
+            startQA();
         }}
         """
         
@@ -1021,13 +1047,14 @@ class qubit():
             self.qa_sequence.constants['n_avg'] = self.n_steps 
         else:
             self.qa_sequence.constants['n_avg'] = self.exp_pars['n_avg']*self.n_steps 
+        self.qa_sequence.constants['delay'] = round(self.qb_pars['cav_resp_time']/(4.4e-9))
         
-        with self.qa_awg_core.set_transaction():
+        with self.qa_ses.set_transaction():
             try:
-                self.qa_awg_core.awgs[0].load_sequencer_program(self.qa_sequence)
+                self.qa_ses.awgs[0].load_sequencer_program(self.qa_sequence)
             except:
                 print(self.qa_sequence)
-            self.qa_awg_core.awgs[0].write_to_waveform_memory(self.qa_sequence.waveforms)
+            self.qa_ses.awgs[0].write_to_waveform_memory(self.qa_sequence.waveforms)
             
         self.qa.setInt('/dev2528/awgs/0/auxtriggers/0/channel', 2) # sets the source of digital trigger 1 to be the signal at trigger input 3 (back panel)
         self.qa.setDouble('/dev2528/triggers/in/2/level', 0.1)
@@ -1056,13 +1083,14 @@ class qubit():
             Wave(np.zeros(N), name="w_zero", output=OutputType.OUT2))
         self.qa_sequence.constants['n_avg'] = self.n_steps 
         self.qa_sequence.constants['rr_reset_time'] = self.roundToBase(self.exp_pars['rr_reset_time']*225e6)
+        self.qa_sequence.constants['delay'] = round(self.qb_pars['cav_resp_time']/(4.4e-9))
         
-        with self.qa_awg_core.set_transaction():
+        with self.qa_ses.set_transaction():
             try:
-                self.qa_awg_core.awgs[0].load_sequencer_program(self.qa_sequence)
+                self.qa_ses.awgs[0].load_sequencer_program(self.qa_sequence)
             except:
                 print(self.qa_sequence)
-            self.qa_awg_core.awgs[0].write_to_waveform_memory(self.qa_sequence.waveforms)
+            self.qa_ses.awgs[0].write_to_waveform_memory(self.qa_sequence.waveforms)
             
         self.qa.setInt('/dev2528/awgs/0/auxtriggers/0/channel', 2) # sets the source of digital trigger 1 to be the signal at trigger input 3 (back panel)
         self.qa.setDouble('/dev2528/triggers/in/2/level', 0.1)
@@ -1082,6 +1110,7 @@ class qubit():
                 playZero(rr_reset_time,AWG_RATE_225MHZ);
                 // ON measurement
                 playWave(1,w_const,2,w_zero,AWG_RATE_225MHZ);
+                wait(delay);
                 startQA();
                 playZero(rr_reset_time,AWG_RATE_225MHZ);
                 }
@@ -1094,6 +1123,7 @@ class qubit():
             while (true) {
                 repeat(n_avg) {
                     playWave(1,w_const,2,w_zero,AWG_RATE_225MHZ);
+                    wait(delay);
                     startQA();
                     playZero(rr_reset_time,AWG_RATE_225MHZ);
                             }
@@ -1109,7 +1139,9 @@ class qubit():
         # delay = round(self.qb_pars['cav_resp_time']*base_rate)
         delay = 0
         bypass_crosstalk=0
-        L = self.roundToBase(self.qb_pars['readout_length']*base_rate)
+        L = 4096
+        #L = self.roundToBase(self.qb_pars['integration_length']*base_rate,base=1024)
+        # L = 8192
         # set modulation frequency of QA AWG to some IF and adjust input range for better resolution
         self.qa.setDouble('/dev2528/sigins/0/range',1.5)
         # self.qa.setInt('/dev2528/oscs/0/freq'.format(device),int(rr_IF))
@@ -1143,13 +1175,13 @@ class qubit():
 
         # QA Monitor Settings
         self.qa.setInt('/dev2528/qas/0/monitor/trigger/channel', 7)
-        if self.exp == 'spectroscopy':
-            self.qa.setInt('/dev2528/qas/0/monitor/averages',1)
-            self.qa.setInt('/dev2528/qas/0/result/averages', 1)
-        else:
-            self.qa.setInt('/dev2528/qas/0/monitor/averages',self.exp_pars['n_avg'])
-            self.qa.setInt('/dev2528/qas/0/result/averages', self.exp_pars['n_avg'])
-        self.qa.setInt('/dev2528/qas/0/monitor/length', 4096)
+        # if self.exp == 'spectroscopy':
+        #     self.qa.setInt('/dev2528/qas/0/monitor/averages',1)
+        #     self.qa.setInt('/dev2528/qas/0/result/averages', 1)
+        # else:
+        self.qa.setInt('/dev2528/qas/0/monitor/averages',self.exp_pars['n_avg'])
+        self.qa.setInt('/dev2528/qas/0/result/averages', self.exp_pars['n_avg'])
+        self.qa.setInt('/dev2528/qas/0/monitor/length', L)
         # configure triggering (0=trigger input 1 7 for internal trigger)
 
         # QA Result Settings
@@ -1240,6 +1272,36 @@ class qubit():
         # Return dict of flattened data
         return {p: np.concatenate(v) for p, v in chunks.items()} 
     
+    def subscribe_nodes(self):
+        wave_data_captured = {}
+        channels = [1,2]
+        
+        for ch in channels:
+            self.node = self.qa_ses.qas[0].result.data[ch].wave
+            self.node.subscribe()
+            wave_data_captured[str(self.node)] = False
+            
+        return wave_data_captured
+            
+    def get_data(self,wave_data_captured={},result_length=1024,timeout=10):
+        
+        start_time = time.time()
+        
+        captured_data = {}
+
+        while not all(wave_data_captured.values()):
+            if start_time + timeout < time.time():
+                raise TimeoutError('Timeout before all samples collected.')
+            for node, value in self.session.poll().items():
+                if node not in captured_data:
+                    captured_data[node] = value[0]['vector']
+                else:
+                    captured_data[node].append(value[0]['vector'])
+                if len(captured_data[node]) >= result_length:
+                    wave_data_captured[node] = True
+                    
+        return captured_data
+    
     def stop_result_unit(self, paths):
         '''
         stop QA result unit,
@@ -1250,6 +1312,7 @@ class qubit():
         '''
         self.qa.unsubscribe(paths)
         self.qa.setInt('/dev2528/qas/0/result/enable', 0)
+        
     #%% signal_funcs
     def pull_wfm(self,sweep_name,nu,tauk,sequence='ramsey'):
         """
@@ -1786,11 +1849,11 @@ class qubit():
         
         start = time.time()
         if mode == 'coarse':
-            span = 20e-3
-            dV = 2e-3
+            span = 30.1e-3
+            dV = 3e-3
         elif mode == 'fine':
-            span = 2e-3
-            dV = 0.2e-3
+            span = 5e-3
+            dV = 0.5e-3
 
         # generate arrays for optimization parameters
         vStart = np.zeros(2)
@@ -1962,9 +2025,9 @@ class qubit():
     #%% utilities
     def inst_init(self):
         '''Connects to Zurich Instruments and peripherals like LOs, attenuatiors,etc.'''
-        session = Session('localhost')
-        self.hdawg_core = session.connect_device('DEV8233')
-        self.qa_awg_core = session.connect_device('DEV2528')
+        self.session = Session('localhost')
+        self.hdawg_core = self.session.connect_device('DEV8233')
+        self.qa_ses = self.session.connect_device('DEV2528')
         self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
         self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
         
@@ -1973,7 +2036,21 @@ class qubit():
         instfuncs.set_attenuator(self.qb_pars['rr_atten'])
         
         self.sa = instfuncs.init_sa()
+   
+    def sort_data(self,data,paths):
         
+        if self.exp == 'spectroscopy':
+            data_ON = []
+            if self.exp_pars['on_off']:
+                data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
+                data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+            else:
+                data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
+        else:
+            pass
+        
+        return data
+            
     def enable_awg(self,inst, enable=1):
         '''
         run/stop AWG
@@ -2410,39 +2487,34 @@ class qubit():
         # ax1.set_ylabel('Phase (rad)')
 
         if len(peaks) == 2:
-            txt = '$\omega_{01}$ = %.4f GHz\n$\omega_{02}/2$ = %.4f GHz\n$\\alpha$ = %.1f MHz\n$A_{qb}$ = %.2f V\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(freq[peaks[1]],freq[peaks[0]],2*(freq[peaks[0]]-freq[peaks[1]])*1e3,self.exp_pars['amp_q'],self.exp_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
+            txt = '$\omega_{01}$ = %.4f GHz\n$\omega_{02}/2$ = %.4f GHz\n$\\alpha$ = %.1f MHz\n$A_{qb}$ = %.2f V\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(freq[peaks[1]],freq[peaks[0]],2*(freq[peaks[0]]-freq[peaks[1]])*1e3,self.exp_pars['amp_q'],self.qb_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
         elif len(peaks) == 1:
-            txt = '$\omega_{01}$ = %.4f GHz\n$A_{qb}$ = %.1f mV\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(freq[peaks[0]],self.exp_pars['amp_q']*1e3,self.exp_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
+            txt = '$\omega_{01}$ = %.4f GHz\n$A_{qb}$ = %.1f mV\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(freq[peaks[0]],self.exp_pars['amp_q']*1e3,self.qb_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
         else:
-            txt = '$A_{qb}$ = %.1f mV\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(self.exp_pars['amp_q']*1e3,self.exp_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
+            txt = '$A_{qb}$ = %.1f mV\nReadout Attn = -%d dB\n$f_r$ = %.4f GHz'%(self.exp_pars['amp_q']*1e3,self.qb_pars['rr_atten'],self.qb_pars['rr_LO']*1e-9)
         plt.gcf().text(1, 0.15, txt, fontsize=14)
         ax1.set_title(f'{self.exp_pars["element"]} spectroscopy {self.iteration}')
         plt.tight_layout()
         plt.show()
         
-    def rr_spec_plot(self,freq,I,Q,mag,df=0.1e6,find_peaks=False):
+    def rr_spec_plot(self,freq,I,Q,mag,df=0.1e6,find_pks=False):
 
         I = I*1e3
         Q = Q*1e3
         freq = freq[1:]
         mag = mag[1:]*1e3
         
-        if find_peaks:
-            sigma = np.std(mag)
-            print(f'Peak threshold at {np.mean(mag)+3*sigma}')
-            peaks,_ = scy.signal.find_peaks(mag,height=np.mean(mag)+3*sigma,distance=200,width=3)
-            try:
-                for i in peaks:
-                    print(f'Peaks at: {round(freq[i],5)} GHz\n')
-            except:
-                print('Peaks not found or do not exist.')
+        # if find_pks:
+        #     sigma = np.std(mag)
+        #     print(f'Peak threshold at {np.mean(mag)+3*sigma}')
+        #     peaks,_ = find_peaks(mag,height=np.mean(mag)+3*sigma,distance=200,width=3)
+        #     try:
+        #         for i in peaks:
+        #             print(f'Peaks at: {round(freq[i],5)} GHz\n')
+        #     except:
+        #         print('Peaks not found or do not exist.')
                 
-        try: 
-            fc,fwhm = self.fit_res(freq,mag)
-        except:
-            print('Center Frequency not found')
-            fc = 0
-            fwhm = 0
+        fc,fwhm = self.fit_res(freq,mag)
 
         fig = plt.figure(figsize=(5,4))
 
@@ -2589,9 +2661,13 @@ class qubit():
         fc = f_data[np.argmin(z_data)]
         if res_type == 'notch':
             # z_data = z_data-min(z_data)
-            idx = np.argwhere(np.diff(np.sign(-z_data + 0.5*max(z_data)))).flatten()
-            fwhm = f_data[idx[1]] - f_data[idx[0]]
-
+            
+            idx = np.argwhere(np.diff(np.sign(-(z_data - 0.5*max(z_data))))).flatten()
+            try:
+                fwhm = f_data[idx[1]] - f_data[idx[0]]
+            except:
+                print('FWHM not found')
+                fwhm = 0
         return fc,fwhm
 
     def fit_data(self,x_vector,y_vector,dx=0.01,fitFunc='',verbose=0):

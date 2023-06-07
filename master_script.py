@@ -9,42 +9,39 @@ Created on Thu Apr 14 11:35:33 2022
 from qubit import qubit
 import numpy as np
 
-qb_name = 'qb3'
+qb_name = 'qb6'
 qb = qubit(qb_name)
 
 #%% Spectroscopy (Resonator)
 '''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=6.468,stop=6.478,step=100e-6) # frequencies are in GHz
+freqs = np.arange(start=6.7035,stop=6.706,step=50e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                256,
+    'n_avg':                512,
     'element':              'rr',
-    'rr_reset_time':        50e-6,
+    'rr_reset_time':        20e-6,
     'satur_dur':            2e-6,
     'rr_atten':             25,
     'on_off':               True,
     }
 
-
 p_data,I,Q = qb.rr_spectroscopy(freqs)
-fc = qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+fc = qb.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,df=1e9*(freqs[1]-freqs[0]),find_pks=True)
 qb.update_qb_value('rr_LO',fc*1e9)
 
 #%% Spectroscopy (Qubit)
 
-
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=4.0,stop=4.3,step=100e-6) # frequencies are in GHz
+freqs = np.arange(start=3.9,stop=4.2,step=200e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                2048,
+    'n_avg':                1024,
     'element':              'qubit',
-    'qubit_reset_time':     150e-6,
-    'amp_q':                0.025,
+    'qubit_reset_time':     200e-6,
+    'amp_q':                0.25,
     'satur_dur':            40e-6,
-    'rr_atten':             21,
     'on_off':               True,
     }
 

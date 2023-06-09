@@ -34,10 +34,10 @@ qb.update_qb_value('rr_LO',fc*1e9)
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=3.9,stop=4.2,step=200e-6) # frequencies are in GHz
+freqs = np.arange(start=3.75,stop=3.92,step=150e-6) # frequencies are in GHz
 
 qb.exp_pars = {
-    'n_avg':                1024,
+    'n_avg':                512,
     'element':              'qubit',
     'qubit_reset_time':     200e-6,
     'amp_q':                0.25,

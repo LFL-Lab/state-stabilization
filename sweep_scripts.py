@@ -43,8 +43,8 @@ for i in pi_amp:
 '''------------------------------------------------------Punchout----------------------------------------------'''
 
 
-freqs = np.arange(start=6.701,stop=6.7055,step=50e-6) # frequencies are in GHz
-atten = np.arange(0,40,2)
+freqs = np.arange(start=6.7035,stop=6.7055,step=50e-6) # frequencies are in GHz
+atten = np.arange(0,18,2)
 #print(atten)
 p_data = np.zeros((len(atten),len(freqs)))
 
@@ -60,8 +60,6 @@ qb.exp_pars = {
 for i,a in enumerate(atten):
     qb.exp_pars['rr_atten'] = a
     p_data[i,:],I,Q = qb.rr_spectroscopy(freqs=freqs,save_data=False)
-    qb.qa_result_reset()
-    # time.sleep(0.1)
     # qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
     
 df = qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',

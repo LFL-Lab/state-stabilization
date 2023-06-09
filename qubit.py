@@ -14,22 +14,19 @@ from tqdm import tqdm
 import time
 import json
 import numpy as np
-from VISAdrivers.sa_api import *
+import sequences as seqs
 import instrument_funcs as instfuncs
 from zhinst.utils import create_api_session,convert_awg_waveform
 from zhinst.toolkit import Session,CommandTable,Sequence,Waveforms
 from zhinst.toolkit.waveform import Wave, OutputType
 from scipy.interpolate import interp1d
 import scipy as scy
-import scipy.fftpack
+# import scipy.fftpack
 import matplotlib.pyplot as plt
 import seaborn as sns; sns.set() # styling
 from scipy.signal import butter,lfilter,freqz,find_peaks,peak_widths
 import re
 import pandas as pd
-import colorama
-from colorama import Fore
-red = Fore.RED
 pi=np.pi        
 
 ''' Plotting Parameters '''
@@ -579,7 +576,7 @@ class qubit():
         
         # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
-            self.setup_active_reset(threshold=threshold)
+            self.setup_active_reset(self.qb_pars['threshold'])
 
         exp_dur = self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
@@ -599,8 +596,8 @@ class qubit():
         self.enable_awg(self.awg,enable=1) #runs the drive sequence
         data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2*timeout) # retrieve data from UHFQA
 
-        # for path, samples in data.items():
-        #     sweep_data[path] = np.append(sweep_data[path], samples) 
+        for path, samples in data.items():
+            sweep_data[path] = np.append(sweep_data[path], samples) 
 
         # reset QA result unit and stop AWGs
         self.stop_result_unit(paths)
@@ -613,9 +610,9 @@ class qubit():
         
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
         # correct values for the x-axis
-        if self.exp == 'p-rabi':
-            x_array = self.get_xdata_frm_ct()[0]
-        elif self.exp != 'p-rabi' and self.exp != 'z-gate':
+        x_array = self.get_xdata_frm_ct()
+        
+        if self.exp != 'p-rabi' and self.exp != 'z-gate':
             x_array = x_array[0]/self.exp_pars['fsAWG']
             
         norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
@@ -660,7 +657,8 @@ class qubit():
         # Initialize sequence class
         self.sequence = Sequence()
         # setup sequence code
-        self.sequence.code = self.gen_seq_code()
+        # print('test')
+        self.sequence.code = seqs.gen_seq_code(self.exp,self.exp_pars['tomographic-axis'])
         # setup constants
         self.setup_seq_pars()
         # setup waveforms
@@ -676,25 +674,6 @@ class qubit():
         # upload everything to awg
         self.upload_to_awg()
             
-    def gen_seq_code(self):
-        
-        if self.exp == 'spectroscopy':
-            code = self.spec_sequence()
-        elif self.exp == 'rabi':
-            code = self.rabi_sequence()
-        elif self.exp == 'p-rabi':
-            code = self.power_rabi_sequence()
-        elif self.exp == 'T1':
-            code = self.T1_sequence()
-        elif self.exp == 'ramsey':
-            code = self.ramsey_sequence()
-        elif self.exp == 'echo':
-            code = self.echo_sequence()
-        elif self.exp == 'z-gate':
-            code = self.z_gate_sequence()
-        
-        return code    
-    
     def setup_seq_pars(self):
         
         # i = 0
@@ -709,7 +688,10 @@ class qubit():
         #         self.sequence.constants[key] = value
         #     i += 1
         self.sequence.constants['n_avg'] = self.exp_pars['n_avg']
-        self.sequence.constants['qubit_reset_time'] = self.roundToBase(self.exp_pars['qubit_reset_time']*1.17e6)
+        if 'element' in self.exp_pars and self.exp_pars['element'] == 'rr':
+            self.sequence.constants['qubit_reset_time'] = self.roundToBase(self.exp_pars['rr_reset_time']*1.17e6)
+        else:
+            self.sequence.constants['qubit_reset_time'] = self.roundToBase(self.exp_pars['qubit_reset_time']*1.17e6)
         if self.exp != 'spectroscopy':
             self.sequence.constants['n_steps'] = self.n_steps
      
@@ -797,7 +779,7 @@ class qubit():
     def setup_mixer_calib(self,inst,amp = 1):
         self.awg.setInt('/dev8233/awgs/0/time',13) # sets AWG sampling rate to 292 kHz
         self.sequence = Sequence()
-        self.sequence.code = self.mixer_calib_sequence()
+        self.sequence.code = seqs.mixer_calib_sequence()
         self.sequence.constants['amp'] = amp
         self.sequence.constants['N'] = self.roundToBase(1024)
         if inst == self.awg:
@@ -808,212 +790,6 @@ class qubit():
                 self.qa_ses.awgs[0].load_sequencer_program(self.sequence)
             
         
-    def spec_sequence(self):
-
-        '''Generate qubit spectroscopy sequence'''
-        
-        if self.exp_pars['on_off']:
-            awg_program = '''       
-    
-            // Beginning of the core sequencer program executed on the HDAWG at run time
-            wave w_marker = 2*marker(512,1);
-    
-            repeat(n_avg) {
-                // OFF Measurement
-                playWave(1,w_marker);
-                playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-                // ON measurement
-                playWave(1,w_const,2,w_zero);
-                playWave(1,w_marker);
-                playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-                        }'''
-        else:
-            awg_program = '''       
-    
-            // Beginning of the core sequencer program executed on the HDAWG at run time
-            wave w_marker = 2*marker(512,1);
-    
-            repeat(n_avg) {
-                playWave(1,w_const,2,w_zero);
-                playWave(1,w_marker);
-                playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-                        }'''
-            
-        return awg_program
-
-    def rabi_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-        resetOscPhase();
-        
-        wave w_marker = 2*marker(512,1);
-        var i;
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(n_avg){
-            for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_gauss_rise_I,1,2,w_zero1);
-                    executeTableEntry(i);
-                    playWave(1,2,w_gauss_fall_I,1,2,w_zero2);
-                    playWave(1,w_marker);
-                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-          }
-        }'''
-
-        return awg_program
-    
-    def power_rabi_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-        resetOscPhase();
-        
-        wave w_marker = 2*marker(512,1);
-        var i;
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(n_avg){
-            for (i=0; i<n_steps; i++) {
-                    executeTableEntry(i);
-                    playWave(1,w_marker);
-                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-          }
-        }'''
-
-        return awg_program
-    
-    def T1_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-        resetOscPhase();
-        wave w_marker = 2*marker(512,1);
-        var i;
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(n_avg){
-            for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
-                    executeTableEntry(i);
-                    playWave(1,w_marker);
-                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-          }
-        }'''
-
-        return awg_program
-    
-    def ramsey_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-            resetOscPhase();
-            
-            wave w_marker = 2*marker(512,1);
-            var i;
-            // Beginning of the core sequencer program executed on the HDAWG at run time
-            repeat(n_avg){
-                for (i=0; i<n_steps; i++) {
-                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                        executeTableEntry(i);
-                        playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                        playWave(1,w_marker);
-                        playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-              }
-            }'''
-
-        return awg_program
-
-    def echo_sequence(self):
-
-        awg_program = '''
-        resetOscPhase();
-        wave w_marker = 2*marker(512,1);
-        var i;
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(n_avg){
-            for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                    executeTableEntry(i);
-                    playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
-                    executeTableEntry(i);
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                    playWave(1,w_marker);
-                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-          }
-        }'''
-
-        return awg_program
-    
-    def z_gate_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-        
-        resetOscPhase();
-        wave w_marker = 2*marker(512,1);
-        var i;
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(n_avg){
-            for (i=0; i<n_steps; i++) {
-                    resetOscPhase();
-                    executeTableEntry(0);
-                    playWave(1,2,w_zero);
-                    executeTableEntry(i);
-                    playWave(1,w_marker);
-                    playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-          }
-        }'''
-
-        return awg_program
-    
-    def single_shot_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-        resetOscPhase();
-        
-        wave w_marker = 2*marker(512,1);
-        // Beginning of the core sequencer program executed on the HDAWG at run time
-        repeat(num_samples) {
-            // OFF Measurement
-            playWave(1,w_marker);
-            playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-            playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
-            playWave(1,w_marker);
-            playZero(qubit_reset_time,AWG_RATE_1P2MHZ);
-            }'''
-
-        return awg_program
-    
-    def mixer_calib_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-            resetOscPhase();
-            wave w_const = amp*ones(N);
-            wave w_zeros = zeros(N);
-
-            playWave(1,2,w_const,1,2,w_zeros);
-            playHold(1e9);
-        '''
-
-        return awg_program
-    
-    def reset_sequence(self):
-        '''Generate qubit spectroscopy sequence'''
-        
-        awg_program = '''
-            waitDigTrigger(1);
-            wait(1);
-            wait(2000);
-            if (getDigTrigger(2) == 0) {
-                wait(10);
-            } else {
-                playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
-                }
-            wait(10000);
-          '''
-          
-        return awg_program
-         
     #%% setup_QA
     def setup_qa_awg(self):
         
@@ -1388,8 +1164,8 @@ class qubit():
 
         # define autocorrelation and compute PSD
         autocorr = np.cos(2*np.pi*nu*t)*np.exp(-np.abs(t)/tauk)
-        psd = 2/N*fft.fft(autocorr)
-        freqs = fft.fftfreq(N,dt*1e6)[:round(N/2)]
+        psd = 2/N*scy.fft.fft(autocorr)
+        freqs = scy.fft.fftfreq(N,dt*1e6)[:round(N/2)]
         power = np.sqrt(np.abs(psd*df))
         # freq = np.fft.fftfreq(N,dt)[:round(2*nu/df)]
         # plt.plot(freq,psd[:round(2*nu/df)])
@@ -1415,99 +1191,99 @@ class qubit():
 
         return np.real(signal)/max(np.real(signal)),np.abs(psd[:round(N/2)]),freqs,autocorr[round(N/2)+1:]
 
-    def calc_autocorr(self,sig):
-        '''Calculates the autocorrelation of the given signal'''
-        return sm.tsa.acf(sig,nlags=len(sig))
+    # def calc_autocorr(self,sig):
+    #     '''Calculates the autocorrelation of the given signal'''
+    #     return sm.tsa.acf(sig,nlags=len(sig))
 
-    def gen_noise_realizations(self,par1_arr=np.linspace(0,10,100),par2_arr=[0],numRealizations=3,n_points=1000,T_max=5e-6,sweep_count=1,
-                               meas_device='CandleQubit_6',sequence='ramsey',wk=False,plot=False):
-        """
-        Generates noise realizations and saves them to a csv file for parameter sweep
+    # def gen_noise_realizations(self,par1_arr=np.linspace(0,10,100),par2_arr=[0],numRealizations=3,n_points=1000,T_max=5e-6,sweep_count=1,
+    #                            meas_device='CandleQubit_6',sequence='ramsey',wk=False,plot=False):
+    #     """
+    #     Generates noise realizations and saves them to a csv file for parameter sweep
 
-        Args:
-            par1_arr (array, optional): array of tauk values. Defaults to np.linspace(0,10,100).
-            par2_arr (array, optional): arary of nu values. Defaults to [0].
-            numRealizations (TYPE, optional): DESCRIPTION. Defaults to 3.
-            n_points (int, optional): DESCRIPTION. Defaults to 1000.
-            T_max (float, optional): DESCRIPTION. Defaults to 5e-6.
-            sweep_count (int, optional): DESCRIPTION. Defaults to 1.
-            meas_device (TYPE, optional): DESCRIPTION. Defaults to 'CandleQubit_6'.
-            sequence (str, optional): DESCRIPTION. Defaults to 'ramsey'.
-            wk (boolean, optional): whether to use Wiener-Kinchin method to generate waveforms. Defaults to 0.
-            plot (boolean, optional): whether to plot noise waveforms. Defaults to 0.
+    #     Args:
+    #         par1_arr (array, optional): array of tauk values. Defaults to np.linspace(0,10,100).
+    #         par2_arr (array, optional): arary of nu values. Defaults to [0].
+    #         numRealizations (TYPE, optional): DESCRIPTION. Defaults to 3.
+    #         n_points (int, optional): DESCRIPTION. Defaults to 1000.
+    #         T_max (float, optional): DESCRIPTION. Defaults to 5e-6.
+    #         sweep_count (int, optional): DESCRIPTION. Defaults to 1.
+    #         meas_device (TYPE, optional): DESCRIPTION. Defaults to 'CandleQubit_6'.
+    #         sequence (str, optional): DESCRIPTION. Defaults to 'ramsey'.
+    #         wk (boolean, optional): whether to use Wiener-Kinchin method to generate waveforms. Defaults to 0.
+    #         plot (boolean, optional): whether to plot noise waveforms. Defaults to 0.
 
-        Returns:
-            None.
+    #     Returns:
+    #         None.
 
-        """
+    #     """
 
-        if len(par2_arr) > 1 or par2_arr[0] != 0:
-            phi = 1
-        else:
-            phi = 0
-        numPoints_par1 = len(par1_arr)
-        numPoints_par2 = len(par2_arr)
-        t = np.linspace(0,T_max,n_points)
-        parent_dir = 'E:\\generalized-markovian-noise\\%s\\sweep_data\\%s\\'%(meas_device,sequence)
-        directory = 'sweep_%03d\\noise_instances'%(sweep_count)
-        path = os.path.join(parent_dir,directory)
-        noise_arr = np.zeros((numRealizations,n_points))
-        for i in range(numPoints_par2):
-            for k in range(numPoints_par1):
-                filename = "nu_%d_Hz_tau_%d_ns.csv" % (round(par2_arr[i]*1e3),round(par1_arr[k]*1e3))
-                with open(os.path.join(path,filename),"w",newline="") as datafile:
-                    writer = csv.writer(datafile)
-                    for j in range(numRealizations):
-                        if len(par2_arr) > 1 or par2_arr != 0:
-                            if wk:
-                                noise_arr[j,:] = np.cos(2*np.pi*par2_arr[i]*1e3*t + phi*2*np.pi*np.random.rand()) * gen_tel_noise(n_points, par1_arr[k], dt = T_max/n_points)
-                            elif wk:
-                                noise,psd,freqs,autocorr = gen_WK_sig(fs=2*n_points/T_max, nu=par2_arr[i]*1e3, tauk=par1_arr[k]*1e-6, Tmax=1e-3)
-                                noise_arr[j,:] = noise[:n_points]/max(noise[:n_points])
-                        elif len(par2_arr) <= 1 and par2_arr[0] == 0:
-                            noise_arr[j,:] = gen_tel_noise(n_points, par1_arr[k], dt = T_max/n_points)
+    #     if len(par2_arr) > 1 or par2_arr[0] != 0:
+    #         phi = 1
+    #     else:
+    #         phi = 0
+    #     numPoints_par1 = len(par1_arr)
+    #     numPoints_par2 = len(par2_arr)
+    #     t = np.linspace(0,T_max,n_points)
+    #     parent_dir = 'E:\\generalized-markovian-noise\\%s\\sweep_data\\%s\\'%(meas_device,sequence)
+    #     directory = 'sweep_%03d\\noise_instances'%(sweep_count)
+    #     path = os.path.join(parent_dir,directory)
+    #     noise_arr = np.zeros((numRealizations,n_points))
+    #     for i in range(numPoints_par2):
+    #         for k in range(numPoints_par1):
+    #             filename = "nu_%d_Hz_tau_%d_ns.csv" % (round(par2_arr[i]*1e3),round(par1_arr[k]*1e3))
+    #             with open(os.path.join(path,filename),"w",newline="") as datafile:
+    #                 writer = csv.writer(datafile)
+    #                 for j in range(numRealizations):
+    #                     if len(par2_arr) > 1 or par2_arr != 0:
+    #                         if wk:
+    #                             noise_arr[j,:] = np.cos(2*np.pi*par2_arr[i]*1e3*t + phi*2*np.pi*np.random.rand()) * gen_tel_noise(n_points, par1_arr[k], dt = T_max/n_points)
+    #                         elif wk:
+    #                             noise,psd,freqs,autocorr = gen_WK_sig(fs=2*n_points/T_max, nu=par2_arr[i]*1e3, tauk=par1_arr[k]*1e-6, Tmax=1e-3)
+    #                             noise_arr[j,:] = noise[:n_points]/max(noise[:n_points])
+    #                     elif len(par2_arr) <= 1 and par2_arr[0] == 0:
+    #                         noise_arr[j,:] = gen_tel_noise(n_points, par1_arr[k], dt = T_max/n_points)
 
-                    writer.writerows(noise_arr)
+    #                 writer.writerows(noise_arr)
 
-        if plot:
-            fig = plt.figure(figsize=(4,8),dpi=300)
-            ax1 = fig.add_subplot(3,1,1) # noise realization plot
-            ax2 = fig.add_subplot(3,1,2) # mean autocorrelation plot
-            ax3 = fig.add_subplot(3,1,3) # PSD plot (real & imag)
+    #     if plot:
+    #         fig = plt.figure(figsize=(4,8),dpi=300)
+    #         ax1 = fig.add_subplot(3,1,1) # noise realization plot
+    #         ax2 = fig.add_subplot(3,1,2) # mean autocorrelation plot
+    #         ax3 = fig.add_subplot(3,1,3) # PSD plot (real & imag)
 
-            ac = np.zeros(n_points)
-            # compute autocorrelations and average over noise realizations
-            for i in range(numRealizations):
-                ac += calc_autocorr(noise_arr[i,:])
-            ac = ac/numRealizations
+    #         ac = np.zeros(n_points)
+    #         # compute autocorrelations and average over noise realizations
+    #         for i in range(numRealizations):
+    #             ac += calc_autocorr(noise_arr[i,:])
+    #         ac = ac/numRealizations
 
-            ax1.plot(t[:100]*1e6,noise_arr[1,:100])
-            ax1.set_ylabel('$\sigma_x(t)$')
-            ax1.set_title('Noise Realization - $\\tau_k$ = %.1f $\mu$s | $\\nu$ = %d kHz'%(par1_arr[0],par2_arr[0]))
+    #         ax1.plot(t[:100]*1e6,noise_arr[1,:100])
+    #         ax1.set_ylabel('$\sigma_x(t)$')
+    #         ax1.set_title('Noise Realization - $\\tau_k$ = %.1f $\mu$s | $\\nu$ = %d kHz'%(par1_arr[0],par2_arr[0]))
 
-            ax2.plot(t[:100]*1e6,autocorr[:100],'r',label='Analytic')
-            ax2.plot(t[:100]*1e6,ac[:100],'b',label='Numeric')
-            ax2.set_title('Autocorrelation')
-            ax2.set_xlabel('Time ($\mu$s)')
-            ax2.legend()
+    #         ax2.plot(t[:100]*1e6,autocorr[:100],'r',label='Analytic')
+    #         ax2.plot(t[:100]*1e6,ac[:100],'b',label='Numeric')
+    #         ax2.set_title('Autocorrelation')
+    #         ax2.set_xlabel('Time ($\mu$s)')
+    #         ax2.legend()
 
-            ax3.plot(freqs[0:10000],np.real(psd)[0:10000],'ro',label='Re',linestyle='None')
-            ax3.plot(freqs[0:10000],np.imag(psd)[0:10000],'bx',label='Im',linestyle='None')
-            ax3.set_xlabel('Frequency(MHz)')
-            ax3.legend()
-            ax3.set_title('PSD')
-            fig.tight_layout()
-            plt.show()
+    #         ax3.plot(freqs[0:10000],np.real(psd)[0:10000],'ro',label='Re',linestyle='None')
+    #         ax3.plot(freqs[0:10000],np.imag(psd)[0:10000],'bx',label='Im',linestyle='None')
+    #         ax3.set_xlabel('Frequency(MHz)')
+    #         ax3.legend()
+    #         ax3.set_title('PSD')
+    #         fig.tight_layout()
+    #         plt.show()
 
-    def gen_tel_noise(self,numPoints,tau,dt):
-        '''Generates a single instance of telegraph noise'''
-        signal = np.ones(numPoints)*(-1)**np.random.randint(0,2)
-        for i in range(1,numPoints-1):
-            if np.random.rand() < 1/(2*tau*1e-6/dt)*np.exp(-1/(2*tau*1e-6/dt)):
-                signal[i+1] = - signal[i]
-            else:
-                signal[i+1] = signal[i]
-        return signal
+    # def gen_tel_noise(self,numPoints,tau,dt):
+    #     '''Generates a single instance of telegraph noise'''
+    #     signal = np.ones(numPoints)*(-1)**np.random.randint(0,2)
+    #     for i in range(1,numPoints-1):
+    #         if np.random.rand() < 1/(2*tau*1e-6/dt)*np.exp(-1/(2*tau*1e-6/dt)):
+    #             signal[i+1] = - signal[i]
+    #         else:
+    #             signal[i+1] = signal[i]
+    #     return signal
 
     def qa_monitor_avg(self,length,averages):
 
@@ -1551,7 +1327,7 @@ class qubit():
 
         return data
 
-    def scope_meas(length=8192,nAverages=128,samp_rate=1.8e9,trigLevel=0.1):
+    def scope_meas(self,length=8192,nAverages=128,samp_rate=1.8e9,trigLevel=0.1):
 
         '''Executes a measurement with the UHFQA'''
         #setup and initialize scope
@@ -1625,28 +1401,28 @@ class qubit():
         return (measTimeBackground*nMeasBackground+measTime*nMeas)*len(par1)*len(par2)
 
 
-    def create_echo_wfms(fs=1.2e9,mu=0,sigma=0,B0=0,n_points=1024,Tmax=5e-6,amp=0,pi2Width=50e-9,n_steps=101,pulse_length_increment=32):
+    # def create_echo_wfms(fs=1.2e9,mu=0,sigma=0,B0=0,n_points=1024,Tmax=5e-6,amp=0,pi2Width=50e-9,n_steps=101,pulse_length_increment=32):
 
-        '''
-        DESCRIPTION: Generates a series of waveforms to be uploaded into the AWG. The output is a series of csv files.
-        '''
+    #     '''
+    #     DESCRIPTION: Generates a series of waveforms to be uploaded into the AWG. The output is a series of csv files.
+    #     '''
 
-        start = time.time()
-        ACpre = mu*np.ones(roundToBase(1500e-9*fs))
-        pi2 = amp*np.ones(int(fs*pi2Width))
-        pi2pre = 0 * ACpre
-        ac_noise = np.random.normal(mu, sigma, 2*n_points)
-        tel_noise = np.zeros(2*n_points)
-        for i in range(n_steps):
-            ch1_wfm = np.concatenate((pi2pre,pi2,tel_noise[0:i*pulse_length_increment],pi2,pi2,tel_noise[i*pulse_length_increment:2*i*pulse_length_increment],pi2,pi2pre))
-            ch2_wfm = np.concatenate((ACpre,mu*pi2/amp,ac_noise[0:i*pulse_length_increment],mu*pi2/amp,mu*pi2/amp,ac_noise[i*pulse_length_increment:2*i*pulse_length_increment],mu*pi2/amp,ACpre))
-            ch1_wfm = ch1_wfm[...,None]
-            ch2_wfm = ch2_wfm[...,None]
-            wfm_2D_arr = np.hstack((ch1_wfm,ch2_wfm))
-            np.savetxt("C:/Users/LFL/Documents/Zurich Instruments/LabOne/WebServer/awg/waves/"+"echo_"+"wfm_%03d"%(i)+".csv", wfm_2D_arr, delimiter = ",")
+    #     start = time.time()
+    #     ACpre = mu*np.ones(roundToBase(1500e-9*fs))
+    #     pi2 = amp*np.ones(int(fs*pi2Width))
+    #     pi2pre = 0 * ACpre
+    #     ac_noise = np.random.normal(mu, sigma, 2*n_points)
+    #     tel_noise = np.zeros(2*n_points)
+    #     for i in range(n_steps):
+    #         ch1_wfm = np.concatenate((pi2pre,pi2,tel_noise[0:i*pulse_length_increment],pi2,pi2,tel_noise[i*pulse_length_increment:2*i*pulse_length_increment],pi2,pi2pre))
+    #         ch2_wfm = np.concatenate((ACpre,mu*pi2/amp,ac_noise[0:i*pulse_length_increment],mu*pi2/amp,mu*pi2/amp,ac_noise[i*pulse_length_increment:2*i*pulse_length_increment],mu*pi2/amp,ACpre))
+    #         ch1_wfm = ch1_wfm[...,None]
+    #         ch2_wfm = ch2_wfm[...,None]
+    #         wfm_2D_arr = np.hstack((ch1_wfm,ch2_wfm))
+    #         np.savetxt("C:/Users/LFL/Documents/Zurich Instruments/LabOne/WebServer/awg/waves/"+"echo_"+"wfm_%03d"%(i)+".csv", wfm_2D_arr, delimiter = ",")
 
-        end = time.time()
-        print('Generating echo Waveforms took %.1f' %(end-start))
+    #     end = time.time()
+    #     print('Generating echo Waveforms took %.1f' %(end-start))
 
     def snr(sa,fc,thres):
         """
@@ -2297,7 +2073,8 @@ class qubit():
         elif key == 'rr_atten':
             instfuncs.set_attenuator(value)
         elif key == 'qb_freq':
-            self.update_qb_value('qb_IF',self.qb_pars['qb_freq']-self.qb_pars['qb_LO'])
+            # self.update_qb_value('qb_IF',self.qb_pars['qb_freq']-self.qb_pars['qb_LO'])
+            self.update_qb_value('qb_LO',self.qb_pars['qb_freq']-self.qb_pars['qb_IF'])
             self.awg.set('/dev8233/oscs/0/freq',self.qb_pars['qb_IF'])
         elif key == 'qb_mixer_imbalance':
             self.IQ_imbalance(g=value[0], phi=value[1])

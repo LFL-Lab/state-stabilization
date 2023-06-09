@@ -6,6 +6,27 @@ Created on Thu Jun  8 15:53:00 2023
 
 """
 
+def gen_seq_code(exp,axis):
+
+    if exp == 'spectroscopy':
+        code = spec_sequence()
+    elif exp == 'rabi':
+        code = rabi_sequence()
+    elif exp == 'p-rabi':
+        code = power_rabi_sequence()
+    elif exp == 'T1':
+        code = T1_sequence()
+    elif exp == 'ramsey':
+        code = ramsey_sequence()
+    elif exp == 'echo':
+        code = echo_sequence()
+    elif exp == 'z-gate':
+        code = z_gate_sequence()
+    
+    code = finalize_sequence(code,axis)
+    
+    return code    
+ 
 def trigger_readout_sequence():
     
     awg_program = '''playWave(1,w_marker);

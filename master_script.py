@@ -24,6 +24,7 @@ qb.exp_pars = {
     'satur_dur':            2e-6,
     'rr_atten':             25,
     'on_off':               True,
+    'tomographic_axis':     'Z',
     }
 
 p_data,I,Q = qb.rr_spectroscopy(freqs)
@@ -55,7 +56,7 @@ qb.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,find_pks=True)
 '''-----------------------------------------------------Time Rabi------------------------------------------------------'''
 
 qb.exp_pars = {
-    'n_avg':                512,
+    'n_avg':                128,
     'x0':                   13e-9,
     'xmax':                 1e-6,
     'dx':                   6e-9,
@@ -64,6 +65,7 @@ qb.exp_pars = {
     'active_reset':         False,
     'qubit_reset_time':     300e-6,
     'qubit_drive_freq':     3.879e9+0.61e6,
+    'tomographic-axis':     'Z',
     }
 
 t,data,nSteps = qb.pulsed_exp(exp='rabi',verbose=1,check_mixers=False)

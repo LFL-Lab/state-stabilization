@@ -22,7 +22,7 @@ for i in atten:
     qb.plot_single_shot(data)
     
     
-pi_amp = np.arange(0.2,0.4,1e-3)
+pi_amp = np.arange(0.21,0.25,1e-3)
 
 qb.exp_pars = {
     'num_samples':          512,

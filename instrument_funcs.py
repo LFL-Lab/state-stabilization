@@ -21,14 +21,14 @@ def set_LO(inst,freq,sweep=False):
     if not sweep:
         print(f'Setting {inst} LO to {round(freq*1e-9,5)} GHz')
     # initialize LO
-    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Get config'))
+    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Do nothing'))
     LO.startInstrument()
     LO.setValue('Frequency', freq)
     LO.setValue('Output',True)
 
 def get_LO(inst):
     # initialize qubit LO
-    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Get config'))
+    LO = client.connectToInstrument('BNC 845 Signal Generator', dict(name=inst, startup = 'Do nothing'))
     LO.startInstrument()
     return LO.getValue('Frequency')
 
@@ -67,7 +67,7 @@ def get_attenuation():
     return attn.getValue('Attenuation')
 
 def init_sa():
-    sa = client.connectToInstrument('SignalHound SpectrumAnalyzer', dict(name='20234179',startup='Get Config'))
+    sa = client.connectToInstrument('SignalHound SpectrumAnalyzer', dict(name='SA',startup='Get Config'))
     sa.startInstrument()
     sa.setValue('Span',0.5e6)
     sa.setValue('Bandwidth',1e3)

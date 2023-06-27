@@ -22,7 +22,7 @@ for i in atten:
     qb.plot_single_shot(data)
     
     
-pi_amp = np.arange(0.2,0.4,1e-3)
+pi_amp = np.arange(0.21,0.25,1e-3)
 
 qb.exp_pars = {
     'num_samples':          512,
@@ -43,28 +43,29 @@ for i in pi_amp:
 '''------------------------------------------------------Punchout----------------------------------------------'''
 
 
-freqs = np.arange(start=6.701,stop=6.707,step=20e-6) # frequencies are in GHz
-atten = np.arange(1,50,0.5)
+freqs = np.arange(start=6.7035,stop=6.7055,step=50e-6) # frequencies are in GHz
+atten = np.arange(0,18,2)
+#print(atten)
 p_data = np.zeros((len(atten),len(freqs)))
 
 qb.exp_pars = {
-    'n_avg':                256,
+    'n_avg':                512,
     'element':              'rr',
-    'rr_reset_time':        10e-6,
-    'satur_dur':            2e-6,
+    'rr_reset_time':        30e-6,
+    'satur_dur':            10e-6,
     'rr_atten':             0,
     'on_off':               True,
     }
 
 for i,a in enumerate(atten):
     qb.exp_pars['rr_atten'] = a
-    p_data[i,:],I,Q = qb.spectroscopy(freqs=freqs)
+    p_data[i,:],I,Q = qb.rr_spectroscopy(freqs=freqs,save_data=False)
     # qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
     
-qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
-            ylabel='Attenuation (dB)', normalize = True,cbar_label='Magnitude (mV)',title='Punchout Measurement')
+df = qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
+            ylabel='Attenuation (dB)', normalize = True,cbar_label='Magnitude',title='Punchout Measurement')
 
-
+#%%
 '''------------------------------------------------------Sweep Rabi Amplitude----------------------------------------------'''
 
 try:

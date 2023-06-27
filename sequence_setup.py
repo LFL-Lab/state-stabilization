@@ -18,8 +18,8 @@ def gen_seq_code(exp,axis):
 
     if exp == 'spectroscopy':
         code = spec_sequence()
-    elif exp == 'rabi':
-        code = rabi_sequence()
+    elif exp == 't-rabi':
+        code = time_rabi_sequence()
     elif exp == 'p-rabi':
         code = power_rabi_sequence()
     elif exp == 'T1':
@@ -111,7 +111,7 @@ def spec_sequence(on_off=True):
     
     return awg_program
 
-def rabi_sequence(tomography=False):
+def time_rabi_sequence(tomography=False):
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -358,20 +358,17 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
 
     # output parsing 
     if output_order == '1' :
-        out = 'OutputType.OUT1'
+        out = OutputType.OUT1
     elif output_order == '2':
-        out = 'OutputType.OUT2'
+        out = OutputType.OUT2
     elif output_order == '12':
-        out = 'OutputType.OUT1|OutputType.OUT2'
+        out = OutputType.OUT1|OutputType.OUT2
     elif output_order == '21':
-        out = 'OutputType.OUT2|OutputType.OUT1'
+        out = OutputType.OUT2|OutputType.OUT1
     elif output_order == '11':
-        out = 'OutputType.OUT1|OutputType.OUT1'
+        out = OutputType.OUT1|OutputType.OUT1
     elif output_order == '22':
-        out = 'OutputType.OUT2|OutputType.OUT2'
-
-
-    
+        out = OutputType.OUT2|OutputType.OUT2
 
     return pulse, wave_name, out
 
@@ -390,13 +387,13 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
                         pulse_length = qubit_drive_dur,
                         output_order = '1')), 
             Wave(*make_wave(pulse_type = 'zero',
-                        wave_name = 'w_const',
+                        wave_name = 'w_zero',
                         amplitude = amp,
                         pulse_length = qubit_drive_dur,
                         output_order = '2'))
     )
 
-    elif exp == 'rabi':
+    elif exp == 't-rabi':
         N = 64
         amp = exp_pars['amp_q']       
     
@@ -429,12 +426,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
         Wave(*make_wave(pulse_type = 'constant',
                         wave_name = 'w_const_I',
                         amplitude = amp,
-                        pulse_length = N,
+                        pulse_length = n_points,
                         output_order = '12')), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_const_Q',
                         amplitude = 0,
-                        pulse_length = N,
+                        pulse_length = n_points,
                         output_order = '12'))
     )
 
@@ -442,12 +439,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
         N = qb_pars['gauss_len']
 
         sequence.waveforms[0] = (
-        Wave(make_wave(pulse_type = 'gaussian',
+        Wave(*make_wave(pulse_type = 'gaussian',
                         wave_name = 'w_gauss',
                         amplitude = 1,
                         pulse_length = N,
                         output_order = '12')), 
-        Wave(make_wave(pulse_type = 'zero',
+        Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero',
                         amplitude = 0,
                         pulse_length = N,
@@ -459,12 +456,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
         amp = qb_pars['pi_amp']
 
         sequence.waveforms[0] = (
-            Wave(make_wave(pulse_type = 'pi',
+            Wave(*make_wave(pulse_type = 'pi',
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
                         output_order = '12')), 
-            Wave(make_wave(pulse_type = 'zero',
+            Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
@@ -472,12 +469,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
     )
 
         sequence.waveforms[1] = (
-            Wave(make_wave(pulse_type = 'zero',
+            Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero_I',
                         amplitude = 0,
                         pulse_length =n_points,
                         output_order = '12')), 
-            Wave(make_wave(pulse_type = 'zero',
+            Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero_Q',
                         amplitude = 0,
                         pulse_length = n_points,
@@ -520,12 +517,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
         amp = qb_pars['pi_amp']
 
         sequence.waveforms[0] = (
-            Wave(make_wave(pulse_type = 'pi2',
+            Wave(*make_wave(pulse_type = 'pi2',
                         wave_name = 'w_pi2_I',
                         amplitude = amp_half,
                         pulse_length = N,
                         output_order = '12')), 
-            Wave(make_wave(pulse_type = 'zero',
+            Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi2_Q',
                         amplitude = 0,
                         pulse_length = N,
@@ -533,12 +530,12 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
     )    
     
         sequence.waveforms[1] = (
-        Wave(make_wave(pulse_type = 'pi',
+        Wave(*make_wave(pulse_type = 'pi',
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
                         output_order = '12')), 
-        Wave(make_wave(pulse_type = 'zero',
+        Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
@@ -638,7 +635,7 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
                         output_order = '12'))
         ) 
 
-    elif exp == 'singleq_shot' or exp_pars['active_reset'] ==  True:
+    elif exp == 'single_shot' or exp_pars['active_reset'] ==  True:
         N = qb_pars['pi_len']
         amp = qb_pars['pi_amp']
     #pi_pulse = qb_pars['pi_amp'] * gaussian (N,N/5)
@@ -654,7 +651,9 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
                         pulse_length = N,
                         output_order = '12'))
         )       
-    return
+    
+    return sequence
+
 
 def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
     
@@ -671,7 +670,7 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
     #     i += 1
     sequence.constants['n_avg'] = exp_pars['n_avg']
     if 'element' in exp_pars and exp_pars['element'] == 'rr':
-        sequence.constants['qubit_reset_time'] = roundToBase(exp_pars['rr_reset_time']*1.17e6)
+        sequence.constants['qubit_reset_time'] = roundToBase(qb_pars['rr_reset_time']*1.17e6)
     else:
         sequence.constants['qubit_reset_time'] = roundToBase(qb_pars['qubit_reset_time']*1.17e6)
     if exp != 'spectroscopy':
@@ -679,8 +678,8 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
 
 #%% command_table_funcs
 # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
-def make_ct(hdawg_core,exp):
-    
+def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100):
+   
     if exp == 'p-rabi':
         sweep_var = 'amp'
     elif exp == 'z-gate':
@@ -688,9 +687,9 @@ def make_ct(hdawg_core,exp):
     elif exp != 'spectroscopy':
         sweep_var='time'
         
-    init_ct(hdawg_core)
+    ct = init_ct(hdawg_core)
     
-    if exp == 'rabi':
+    if exp == 't-rabi':
         wfm_index = 2
     elif exp == 'p-rabi'  or exp == 'z-gate':
         wfm_index = 0
@@ -701,16 +700,16 @@ def make_ct(hdawg_core,exp):
     if exp == 'echo':
         wfm_index = 2
         
-        
     if sweep_var == 'time':
-        ct_sweep_length(wfm_index)
+        ct_sweep_length(ct,wfm_index,x0,dx,n_steps)
     elif sweep_var == 'amp':
-        ct_sweep_amp(wfm_index)
+        ct_sweep_amp(ct,wfm_index,exp_pars,n_steps)
     elif sweep_var == 'phase':
-        ct_sweep_phase(wfm_index)
+        ct_sweep_phase(ct,exp_pars,wfm_index,n_steps)
+        
+    return ct
     
 def ct_sweep_length(ct,wfm_index,x0,dx,n_steps=100):
-        
     for i in range(n_steps):
         wfm_length = x0 + i * dx
         ct.table[i].waveform.index = wfm_index
@@ -733,7 +732,7 @@ def ct_sweep_phase(ct,exp_pars,wfm_index,n_steps):
         ct.table[i].phase1.value = phase
         ct.table[i].waveform.samplingRateDivider = 0 # sets the AWG rate for the pi/2 pulses to 2.4 GHz
         
-def init_ct(ct,hdawg_core):
+def init_ct(hdawg_core):
     
     ct_schema = hdawg_core.awgs[0].commandtable.load_validation_schema()
     ct = CommandTable(ct_schema)

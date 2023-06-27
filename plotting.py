@@ -7,7 +7,7 @@ Created on Thu Jun 22 16:30:32 2023
 
 import numpy as np
 from scipy.signal import butter,find_peaks
-import seaborb as sns; sns.set() # styling
+import seaborn as sns; sns.set() # styling
 import pandas as pd
 import scipy as scy
 from qutip import qpt_plot as qptp
@@ -136,6 +136,8 @@ def rr_spec_plot(freq,I,Q,mag,exp_pars={},qb_pars={},df=0.1e6,iteration=1,find_p
     plt.tight_layout()
     plt.show()
     
+    return fc
+    
 def heatplot(xdata, ydata, z_data, xlabel = "", ylabel = "", normalize=False, 
              cbar_label = 'log mag',title='', **kwargs):
     
@@ -191,7 +193,6 @@ def heatplot(xdata, ydata, z_data, xlabel = "", ylabel = "", normalize=False,
         
     return df
     
-    return fc
 #%% time-based_plots
 def plot_p_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
 
@@ -219,7 +220,7 @@ def plot_t_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},device
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
     y_vector = y_vector*1e3
-    x_vector = x_vector*1e3
+    x_vector = x_vector*1e9
     
     ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
     ax.set_ylabel('Digitizer Voltage (mV)')
@@ -458,7 +459,7 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
     amp = (max(y_vector)-min(y_vector))/2
     offset = np.mean(y_vector)
 
-    if exp == "rabi":
+    if exp == "t-rabi":
         fitFunction = rabi
         x_vector = x_vector*1e3
         period = 1e3/(extract_freq(x_vector, y_vector, dx,plot=0))
@@ -473,11 +474,10 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
         x_vector = x_vector*1e-6
         period = 1/(extract_freq(x_vector, y_vector, dx,plot=0))
         print('Amplitude Initial Guess: %.3f'%(period))
-        phase = 0
         lb = [-2*amp,0.1*period,-2*abs(offset)]
         ub = [2*amp,10*period,2*abs(offset)]
         # p0 = [amp,period,phase,offset]
-        p0 = [-amp,period,offset]
+        p0 = [amp,period,offset]
 
     elif exp == "ramsey" or exp == 'tomography':
         f = extract_freq(x_vector, y_vector,dx,plot=0)

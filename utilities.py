@@ -39,3 +39,27 @@ def retry(tries, delay=3, backoff=2):
             return False # Ran out of tries :-(
         return f_retry # true decorator -> decorated function
     return deco_retry  # @retry(arg[, ...]) -> true decorator
+
+def odd(n):
+    return range(1,n,2)
+
+def even(n):
+    return range(0,n,2)
+
+def roundToBase(n_points,base=16):
+    '''Make the AWG happy by uploading a wfm whose points are multiple of 16'''
+    y = int(base*round(n_points/base))
+    if y==0:
+        y = int(base*round(n_points/base+1))
+        
+    return y
+
+def Volt2dBm(data):
+
+    return 10*np.log10(1e3*data**2/50)
+
+def Watt2dBm(x):
+    '''
+    converts from units of Watts to dBm
+    '''
+    return 10.*np.log10(x*1000.)

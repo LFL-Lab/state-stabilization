@@ -8,7 +8,6 @@ Description: A script to initialize and setup instruments other than the zurich 
 """
 
 import sys
-from VISAdrivers.sa_api import *
 sys.path.append("D:\Program Files\Keysight\Labber\Script")
 sys.path.append(r"C:\Users\lfl\measurements_test")
 import Labber
@@ -72,10 +71,6 @@ def init_sa():
     sa.setValue('Span',0.5e6)
     sa.setValue('Bandwidth',1e3)
     sa.setValue('Threshold',-20)
-    # sa = sa_open_device()["handle"]
-    # sa_config_acquisition(device = sa, detector = SA_AVERAGE, scale = SA_LOG_SCALE)
-    # sa_config_gain_atten(sa, SA_AUTO_ATTEN, SA_AUTO_GAIN, True)
-    # sa_config_sweep_coupling(device = sa, rbw = 1e2, vbw = 1e2, reject=0)
 
     return sa
 

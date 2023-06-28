@@ -7,6 +7,7 @@ Created on Thu May 11 14:49:10 2023
 
 import time
 import math
+import numpy as np
 
 # Retry decorator with exponential backoff
 def retry(tries, delay=3, backoff=2):
@@ -63,3 +64,27 @@ def Watt2dBm(x):
     converts from units of Watts to dBm
     '''
     return 10.*np.log10(x*1000.)
+
+def gen_arb_wfm(wfm_type,wfm_pars,t0,tmax,dt):
+    
+    time_arr = np.arange(t0,tmax+dt,dt)
+    
+    if wfm_type == 'rising':
+        fun = lambda x : (1/np.sqrt(1-x)) 
+        wfm = wfm_pars['amp']*fun(time_arr)
+    elif wfm_type == 'markov':
+        wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], wfm_pars['n_points'])
+    elif wfm_type == 'telegraph':
+        wfm = np.cos(2*np.pi*wfm_pars['nu']*1e3*time_arr + 2*np.pi*np.random.rand()) * gen_tel_noise(len(time_arr), wfm_pars['tau'], dt = tmax/len(time_arr))
+
+    return wfm
+
+def gen_tel_noise(numPoints,tau,dt):
+    '''Generates a single instance of telegraph noise'''
+    signal = np.ones(numPoints)*(-1)**np.random.randint(0,2)
+    for i in range(1,numPoints-1):
+        if np.random.rand() < 1/(2*tau*1e-6/dt)*np.exp(-1/(2*tau*1e-6/dt)):
+            signal[i+1] = - signal[i]
+        else:
+            signal[i+1] = signal[i]
+    return signal

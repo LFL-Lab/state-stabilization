@@ -11,7 +11,7 @@ import numpy as np
 import plotting as pt
 
 device_name = "WM1"
-project =  'dynamical-decoupling'
+project =  'state-stabilization'
 qb_name = 'qb6'
 qb = qubit(qb_name)
 

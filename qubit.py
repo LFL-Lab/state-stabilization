@@ -19,7 +19,7 @@ import instrument_funcs as instfuncs
 from zhinst.utils import create_api_session,convert_awg_waveform
 from zhinst.toolkit import Session,CommandTable,Sequence,Waveforms
 from zhinst.toolkit.waveform import Wave, OutputType
-from utilities import odd,even,roundToBase
+from utilities import odd,even,roundToBase,gen_arb_wfm
 from scipy.signal.windows import gaussian
 from plotting import plot_mixer_opt
 import re
@@ -584,9 +584,108 @@ class qubit():
         #     et = time.time()
         #     print('Replacing waveforms took: %.1f ms'%(1e3*(et-bt)))
 
-    # def state_stabilization(self):
+    def state_stabilization(self,verbose=True):
         
+        '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
+
+        # update qubit IF frequency
+        self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
+        # if check_mixers:
         
+        # stops AWGs and reset the QA to get rid of errors
+        self.enable_awg(self.awg,enable=0)
+        self.enable_awg(self.qa,enable=0)
+        self.qa_result_reset()
+        
+        # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
+        # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
+        # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
+        # requirement of the AWG is satisfied.
+        if self.exp == 'p-rabi' or self.exp == 'z-gate':
+            self.x0 = self.exp_pars['x0']
+            self.xmax = self.exp_pars['xmax']
+            self.dx = self.exp_pars['dx']
+            x_array = np.arange(self.x0,self.xmax+self.dx/2,self.dx)
+            self.n_steps = len(x_array)
+        else:
+            self.n_points,self.n_steps,self.x0,self.xmax,self.dx = self.calc_steps(verbose)
+            
+        #sets the modulation ON or OFF. Should be ON 99% of the time
+        if self.qb_pars['qb_IF'] != 0:
+            self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
+            self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
+        else:
+            self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
+        
+        # adjusts the sampling rate of the AWG
+        self.awg.setInt('/dev8233/awgs/0/time',int(np.log2(2.4e9/self.exp_pars['fsAWG']))) # sets AWG sampling rate to 600 MHz
+        
+        # setup QA AWG
+        self.setup_qa_awg(ssb=False) # setup QA AWG for readout
+        
+        # setup QA Result unit
+        self.config_qa(result_length=self.n_steps,source=source,ssb=ssb) # configure UHFQA result unit, source = 2 means data is rotated
+        self.qa.sync()
+        
+        # setup active reset if applicable
+        if self.exp_pars['active_reset'] == True:
+            self.setup_active_reset(self.qb_pars['threshold'])
+
+        exp_dur = self.calc_timeout()
+        print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
+
+        if self.exp_pars['active_reset'] == True:
+            timeout = 0.2*1.2*exp_dur
+        else:
+            timeout = 1.2*exp_dur
+
+        sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
+
+
+        for i in ['X','Y','Z']:
+            self.setup_awg()
+        self.enable_awg(self.qa,enable=1) # start the readout sequence
+
+        self.qa_result_enable() # arm the qa
+
+        str_meas = time.time()
+        self.enable_awg(self.awg,enable=1) #runs the drive sequence
+        data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2*timeout) # retrieve data from UHFQA
+
+        for path, samples in data.items():
+            sweep_data[path] = np.append(sweep_data[path], samples) 
+
+        # reset QA result unit and stop AWGs
+        self.stop_result_unit(paths)
+        self.enable_awg(self.awg, enable = 0)
+        self.enable_awg(self.qa, enable = 0)
+
+
+        end_meas = time.time()
+        print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+        
+        # retrieves swept variable values from command table. This ensures that the final plot showcases the
+        # correct values for the x-axis
+        x_array = self.get_xdata_frm_ct()[0]
+        
+        if self.exp != 'p-rabi' and self.exp != 'z-gate':
+            x_array = x_array/self.exp_pars['fsAWG']
+            
+        norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
+        data = sweep_data[paths[0]][0:self.n_steps]/norm # normalizes the data according to the integration length
+        
+        if source == 2 or source == 1:
+            results = data
+        elif source == 7:
+            I = data.real
+            Q = data.imag
+            results = [[I],[Q]]
+
+        if save_data:
+            self.save_data(project,device_name,data=np.vstack((x_array,results)))
+            
+        return x_array,results,self.n_steps 
     #%% setup_HDAWG
     def setup_awg(self):
         
@@ -606,113 +705,6 @@ class qubit():
         # upload everything to awg
         self.upload_to_awg(ct)
             
-   
-   #%% setup waveforms old code    (delete section comment thing later)
-
-    
-    # def setup_waveforms(self):
-    #     '''create the waveforms necessary for each experiment'''
-    #     self.sequence.waveforms = Waveforms()
-        
-    #     if self.exp == 'spectroscopy':
-            
-    #         qubit_drive_dur = roundToBase(self.exp_pars['satur_dur']*self.exp_pars['fsAWG'])
-    #         const_pulse = 2*self.exp_pars['amp_q'] * np.ones(qubit_drive_dur)
-    #         self.sequence.waveforms[0] = (Wave(const_pulse, name="w_const", output=OutputType.OUT1),
-    #             Wave(np.zeros(qubit_drive_dur), name="w_zero", output=OutputType.OUT2))
-            
-            
-    #     elif self.exp == 'rabi':
-            
-    #         N = 64
-    #         # gauss_pulse = self.calc_amp('dev8233', amp=self.exp_pars['amp_q'])*gaussian(N,N/5)
-    #         gauss_pulse = self.exp_pars['amp_q']*gaussian(N,N/5)
-    #         gauss_rise = gauss_pulse[:int(N/2)]
-    #         gauss_fall = gauss_pulse[int(N/2):]
-            
-    #         self.sequence.waveforms[0] = (Wave(gauss_rise, name="w_gauss_rise_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(len(gauss_rise)), name="w_zero1", output=OutputType.OUT1|OutputType.OUT2))
-                
-    #         self.sequence.waveforms[1] = (Wave(gauss_fall, name="w_gauss_fall_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(len(gauss_fall)), name="w_zero2", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #         self.sequence.waveforms[2] = (Wave(self.exp_pars['amp_q']*np.ones(self.n_points), name="w_const_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(self.n_points), name="w_const_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #     elif self.exp == 'p-rabi':
-    #         N = self.qb_pars['gauss_len']
-    #         gauss_pulse = gaussian(N,N/5)
-           
-            
-    #         self.sequence.waveforms[0] = (Wave(gauss_pulse, name="w_gauss", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_zero", output=OutputType.OUT1|OutputType.OUT2))
-    #         # self.sequence.waveforms[0] = (Wave(np.zeros(N), name="w_zero", output=OutputType.OUT2|OutputType.OUT1),
-    #         #     Wave(gauss_pulse, name="w_gauss", output=OutputType.OUT2|OutputType.OUT1))
-           
-            
-    #     elif self.exp == 'T1':
-            
-            
-    #         N = self.qb_pars['pi_len']
-            
-    #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
-            
-    #         self.sequence.waveforms[0] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
-    #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
-                
-    #     elif self.exp == 'ramsey':
-    #         N = self.qb_pars['pi_len']
-    #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
-    #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
-    #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #     elif self.exp == 'echo':
-    #         N = self.qb_pars['pi_len']
-    #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
-    #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
-            
-    #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
-    #         self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
-    #         self.sequence.waveforms[2] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #     elif self.exp == 'z-gate':
-    #         N = self.qb_pars['pi_len']
-    #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
-    #         self.n_points = roundToBase(1e-6*self.exp_pars['fsAWG'])
-            
-    #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
-    #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #     elif self.exp == 'tomography':
-    #         N = self.qb_pars['pi_len']
-    #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
-    #         pi_pulse = self.qb_pars['pi_amp'] * gaussian(N,N/5)
-            
-    #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2X_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi2X_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #         self.sequence.waveforms[2] = (Wave(np.zeros(N), name="w_pi2Y_I", output=OutputType.OUT2|OutputType.OUT1),
-    #             Wave(pi2_pulse, name="w_pi2Y_Q", output=OutputType.OUT2|OutputType.OUT1))
-            
-    #         self.sequence.waveforms[3] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
-            
-    #     elif self.exp == 'single_shot' or self.exp_pars['active_reset'] == True:
-    #         N = self.qb_pars['pi_len']
-    #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
-    #         self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
-    #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
   #%% set up mixer calib         (delete section comment thing later) 
     def setup_mixer_calib(self,inst,amp = 1):
         self.awg.setInt('/dev8233/awgs/0/time',13) # sets AWG sampling rate to 292 kHz
@@ -1918,4 +1910,112 @@ class qubit():
         
         path = "C:/Users/LFL/Documents/Zurich Instruments/LabOne/WebServer/awg/waves/"
         np.savetxt(path+filename+"_wfm"+".csv",wfm_data, delimiter = ",") # save file where it can be called by the AWG sequence program
+        
+        
+       #%% graveyard
+
+        
+        # def setup_waveforms(self):
+        #     '''create the waveforms necessary for each experiment'''
+        #     self.sequence.waveforms = Waveforms()
+            
+        #     if self.exp == 'spectroscopy':
+                
+        #         qubit_drive_dur = roundToBase(self.exp_pars['satur_dur']*self.exp_pars['fsAWG'])
+        #         const_pulse = 2*self.exp_pars['amp_q'] * np.ones(qubit_drive_dur)
+        #         self.sequence.waveforms[0] = (Wave(const_pulse, name="w_const", output=OutputType.OUT1),
+        #             Wave(np.zeros(qubit_drive_dur), name="w_zero", output=OutputType.OUT2))
+                
+                
+        #     elif self.exp == 'rabi':
+                
+        #         N = 64
+        #         # gauss_pulse = self.calc_amp('dev8233', amp=self.exp_pars['amp_q'])*gaussian(N,N/5)
+        #         gauss_pulse = self.exp_pars['amp_q']*gaussian(N,N/5)
+        #         gauss_rise = gauss_pulse[:int(N/2)]
+        #         gauss_fall = gauss_pulse[int(N/2):]
+                
+        #         self.sequence.waveforms[0] = (Wave(gauss_rise, name="w_gauss_rise_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(len(gauss_rise)), name="w_zero1", output=OutputType.OUT1|OutputType.OUT2))
+                    
+        #         self.sequence.waveforms[1] = (Wave(gauss_fall, name="w_gauss_fall_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(len(gauss_fall)), name="w_zero2", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #         self.sequence.waveforms[2] = (Wave(self.exp_pars['amp_q']*np.ones(self.n_points), name="w_const_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(self.n_points), name="w_const_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #     elif self.exp == 'p-rabi':
+        #         N = self.qb_pars['gauss_len']
+        #         gauss_pulse = gaussian(N,N/5)
+               
+                
+        #         self.sequence.waveforms[0] = (Wave(gauss_pulse, name="w_gauss", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_zero", output=OutputType.OUT1|OutputType.OUT2))
+        #         # self.sequence.waveforms[0] = (Wave(np.zeros(N), name="w_zero", output=OutputType.OUT2|OutputType.OUT1),
+        #         #     Wave(gauss_pulse, name="w_gauss", output=OutputType.OUT2|OutputType.OUT1))
+               
+                
+        #     elif self.exp == 'T1':
+                
+                
+        #         N = self.qb_pars['pi_len']
+                
+        #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
+                
+        #         self.sequence.waveforms[0] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+        #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+                    
+        #     elif self.exp == 'ramsey':
+        #         N = self.qb_pars['pi_len']
+        #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+        #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+        #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #     elif self.exp == 'echo':
+        #         N = self.qb_pars['pi_len']
+        #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+        #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
+                
+        #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+        #         self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+        #         self.sequence.waveforms[2] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #     elif self.exp == 'z-gate':
+        #         N = self.qb_pars['pi_len']
+        #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+        #         self.n_points = roundToBase(1e-6*self.exp_pars['fsAWG'])
+                
+        #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))
+        #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #     elif self.exp == 'tomography':
+        #         N = self.qb_pars['pi_len']
+        #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
+        #         pi_pulse = self.qb_pars['pi_amp'] * gaussian(N,N/5)
+                
+        #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2X_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi2X_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #         self.sequence.waveforms[1] = (Wave(np.zeros(self.n_points), name="w_zero_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(self.n_points), name="w_zero_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #         self.sequence.waveforms[2] = (Wave(np.zeros(N), name="w_pi2Y_I", output=OutputType.OUT2|OutputType.OUT1),
+        #             Wave(pi2_pulse, name="w_pi2Y_Q", output=OutputType.OUT2|OutputType.OUT1))
+                
+        #         self.sequence.waveforms[3] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+                
+        #     elif self.exp == 'single_shot' or self.exp_pars['active_reset'] == True:
+        #         N = self.qb_pars['pi_len']
+        #         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
+        #         self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+        #             Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
         

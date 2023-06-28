@@ -30,6 +30,8 @@ def gen_seq_code(exp,axis):
         code = echo_sequence()
     elif exp == 'tomography':
         code = tomography_sequence()
+    elif exp == 'state-stabilization':
+        code = state_stabilization_sequence()
     elif exp == 'z-gate':
         code = z_gate_sequence()
     elif exp == 'single-shot':
@@ -41,14 +43,14 @@ def gen_seq_code(exp,axis):
   
 def prepare_state(awg_program, state='X'):
     
-    if state == 'X':
-        code = '''playWave(1,2,w_pi2X_I,1,2,w_pi2X_Q,AWG_RATE_2400MHZ);'''
-    elif state == 'Y':
-        code = '''playWave(1,2,w_pi2Y_I,1,2,w_pi2Y_Q,AWG_RATE_2400MHZ);'''
-    elif state == '0':
-        code = ''''''
-    elif state == '1':
-        code = '''playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);'''
+    # if state == 'X':
+    #     code = '''playWave(1,2,w_prep_I,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
+    # elif state == 'Y':
+    #     code = '''playWave(1,2,w_prep_Q,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
+    # elif state == '0':
+    #     code = ''''''
+    # elif state == '1':
+    #     code = '''playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);'''
         
     return code
  
@@ -72,7 +74,7 @@ def tomographic_pulse_sequence(axis='Z'):
 
 def finalize_sequence(awg_program,state='X',axis='Z'):
     
-    awg_program = awg_program.replace('_prepare_state_',prepare_state(awg_program,state))
+    # awg_program = awg_program.replace('_prepare_state_',prepare_state(awg_program,state))
     awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
     awg_program = awg_program.replace('_tomographic_pulse_',tomographic_pulse_sequence(axis))
     
@@ -266,7 +268,25 @@ def tomography_sequence():
     
 
     return awg_program
+
+def state_stabilization_sequence():
     
+    awg_program = '''
+   
+    resetOscPhase();
+    wave w_marker = 2*marker(512,1);
+    var i;
+    // Beginning of the core sequencer program executed on the HDAWG at run time
+    repeat(n_avg){
+        for (i=0; i<n_steps; i++) {
+                executeTableEntry(n_steps);
+               executeTableEntry(i);
+                executeTableEntry(n_steps+1);
+                _trigger_readout_
+      }
+    }'''
+    
+    return awg_program
  
 def single_shot_sequence():
     '''Generate qubit spectroscopy sequence'''
@@ -317,7 +337,7 @@ def reset_sequence():
     return awg_program
 
 #%% waveform_funcs
-def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_length = 16 , output_order='1' ):
+def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_length = 16 , custom_wfm = [], output_order='1' ):
     '''
     Generates string to be used for generating waveforms to be uploaded to the AWG 
 
@@ -332,6 +352,7 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
     amplitude:         float           amplitude of waveform, will be defined 
     pulse_length:      int             pulse length in number of samples; for
                                         Zurich Instruments, it's in base 16. 
+    custom_wfm:        list           custom waveform to be applied to qubit after state preparation
     output_order:      float
 
 
@@ -352,6 +373,8 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
     elif pulse_type == 'fall':
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
+    elif pulse_type == 'arb':
+        pulse = amplitude * custom_wfm
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -634,6 +657,55 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
                         pulse_length = N,
                         output_order = '12'))
         ) 
+        
+    elif exp == 'state-stabilization':
+         N = qb_pars['pi_len']
+         amp_half = qb_pars['pi_half_amp']
+         pi_amp = qb_pars['pi_amp']
+
+         sequence.waveforms[0] = (
+         Wave(*make_wave(pulse_type = 'pi',
+                         wave_name = 'w_prep_I',
+                         amplitude = pi_amp,
+                         pulse_length = N,
+                         output_order = '12')), 
+         Wave(*make_wave(pulse_type = 'zero',
+                         wave_name = 'w_prep_Q',
+                         amplitude = 0,
+                         pulse_length = N,
+                         output_order = '12'))
+         )    
+
+         sequence.waveforms[1] = (
+             Wave(*make_wave(pulse_type = 'pi',
+                        wave_name = 'w_tom_I',
+                        amplitude = 0,
+                        pulse_length = N,
+                        output_order = '21')), 
+             Wave(*make_wave(pulse_type = 'zero',
+                        wave_name = 'w_tom_Q',
+                        amplitude = amp_half,
+                        pulse_length = N,
+                        output_order = '21'))
+        )  
+         
+         sequence.waveforms[2] = (
+         Wave(*make_wave(pulse_type = 'arb',
+                         wave_name = 'w_arb_I',
+                         amplitude = 0,
+                         pulse_length = n_points,
+                         output_order = '12')), 
+         Wave(*make_wave(pulse_type = 'zero',
+                         wave_name = 'w_zero_Q',
+                         amplitude = 0,
+                         pulse_length = n_points,
+                         output_order = '12'))
+     )
+
+       
+
+       
+         
 
     elif exp == 'single_shot' or exp_pars['active_reset'] ==  True:
         N = qb_pars['pi_len']
@@ -675,12 +747,13 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
         sequence.constants['qubit_reset_time'] = roundToBase(qb_pars['qubit_reset_time']*1.17e6)
     if exp != 'spectroscopy':
         sequence.constants['n_steps'] = n_steps
+        
 
 #%% command_table_funcs
 # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
-def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100):
+def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100,amp=[1.0,1.0],theta=[90,90]):
    
-    if exp == 'p-rabi':
+    if exp == 'p-rabi' or exp == 'state-stabilization':
         sweep_var = 'amp'
     elif exp == 'z-gate':
         sweep_var = 'phase'
@@ -689,7 +762,7 @@ def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100):
         
     ct = init_ct(hdawg_core)
     
-    if exp == 't-rabi':
+    if exp == 't-rabi' or exp == 'echo' or exp == 'state-stabilization':
         wfm_index = 2
     elif exp == 'p-rabi'  or exp == 'z-gate':
         wfm_index = 0
@@ -697,8 +770,6 @@ def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100):
         wfm_index = 1
     elif exp == 'ramsey' or exp == 'tomography':
         wfm_index = 1
-    if exp == 'echo':
-        wfm_index = 2
         
     if sweep_var == 'time':
         ct_sweep_length(ct,wfm_index,x0,dx,n_steps)
@@ -706,6 +777,10 @@ def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100):
         ct_sweep_amp(ct,wfm_index,exp_pars,n_steps)
     elif sweep_var == 'phase':
         ct_sweep_phase(ct,exp_pars,wfm_index,n_steps)
+        
+    if exp == 'state-stabilization':
+        ct = arb_pulse(ct,n_steps,wfm_index,amp[0],theta[0])
+        ct = arb_pulse(ct,n_steps+1,wfm_index,amp[1],theta[1])
         
     return ct
     
@@ -738,3 +813,14 @@ def init_ct(hdawg_core):
     ct = CommandTable(ct_schema)
     
     return ct
+
+def arb_pulse(ct,table_index,wfm_index,amp,theta):
+    
+    ct.table[table_index].waveform.index = wfm_index
+    ct.table[table_index].amplitude0.value = amp
+    ct.table[table_index].amplitude1.value = amp
+    ct.table[table_index].phase0.value = 0
+    ct.table[table_index].phase1.value = theta
+    
+    return ct
+    

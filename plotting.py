@@ -194,7 +194,7 @@ def heatplot(xdata, ydata, z_data, xlabel = "", ylabel = "", normalize=False,
     return df
     
 #%% time-based_plots
-def plot_p_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
+def plot_p_rabi_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
 
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -212,10 +212,10 @@ def plot_p_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iterat
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\p-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\p-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
 
 
-def plot_t_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},device_name='',project='',iteration=1,savefig=True):
+def plot_t_rabi_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},device_name='',project='',iteration=1,savefig=True):
     
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -234,9 +234,9 @@ def plot_t_rabi_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},device
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\t-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\t-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
 
-def plot_ramsey_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},fitFunc='',iteration=1,device_name='',project='',savefig=True):
+def plot_ramsey_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},fitFunc='',iteration=1,device_name='',project='',savefig=True):
      
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -258,10 +258,10 @@ def plot_ramsey_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},fitFun
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\ramsey-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\ramsey-data\\fig_{iteration:03d}.png',dpi='figure')
 
 
-def plot_z_gate_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
+def plot_z_gate_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
     
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -279,9 +279,9 @@ def plot_z_gate_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iterat
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\z-gate-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\z-gate-data\\fig_{iteration:03d}.png',dpi='figure')
 
-def plot_echo_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
+def plot_echo_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
      
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -300,10 +300,10 @@ def plot_echo_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteratio
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\echo-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\echo-data\\fig_{iteration:03d}.png',dpi='figure')
 
 
-def plot_T1_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
+def plot_T1_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
     
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, ax = plt.subplots()
@@ -322,7 +322,7 @@ def plot_T1_data(x_vector,y_vector,fitted_pars,exp_pars={},qb_pars={},iteration=
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
     if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\T1-data\\fig_{iteration:03d}.png',dpi='figure')
+        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\T1-data\\fig_{iteration:03d}.png',dpi='figure')
         
         
 #%% tomography_plots

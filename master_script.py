@@ -11,7 +11,7 @@ import numpy as np
 import plotting as pt
 
 device_name = "WM1"
-project =  'state-stabilization'
+project = 'state-stabilization'
 qb_name = 'qb6'
 qb = qubit(qb_name)
 
@@ -21,6 +21,7 @@ qb = qubit(qb_name)
 freqs = np.arange(start=6.7035,stop=6.706,step=50e-6) # frequencies are in GHz
 
 qb.exp_pars = {
+    'exp':                  'spectroscopy',
     'n_avg':                512,
     'element':              'rr',
     'rr_reset_time':        20e-6,
@@ -41,6 +42,7 @@ qb.update_qb_value('rr_LO',fc*1e9)
 freqs = np.arange(start=3.8,stop=4,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
+    'exp':                  'spectroscopy',
     'n_avg':                512,
     'element':              'qubit',
     'qubit_reset_time':     200e-6,
@@ -62,42 +64,42 @@ pt.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,exp_pars=qb.exp_pars,qb_pars=q
 detuning = -1.67e6
 
 qb.exp_pars = {
-    'n_avg':                256,
+    'exp':                  't-rabi',
+    'n_avg':                128,
     'x0':                   13e-9,
     'xmax':                 1e-6,
     'dx':                   6e-9,
     'fsAWG':                2.4e9,
     'amp_q':                0.3,
     'active_reset':         False,
-    'qubit_reset_time':     300e-6,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
     }
 
-t,data,nSteps = qb.pulsed_exp(exp='t-rabi',verbose=1,check_mixers=False)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,verbose=1,device_name=device_name,check_mixers=False)
 # plot data
 fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='t-rabi',dx=t[-1]/nSteps*1e6,verbose=0)
-pt.plot_t_rabi_data(x_vector=t,y_vector=data,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,fitted_pars=fitted_pars,device_name=device_name,project=project)
+pt.plot_t_rabi_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 #%% Power Rabi
 '''-----------------------------------------------------Power Rabi------------------------------------------------------'''
 
 qb.exp_pars = {
+    'exp':                  'p-rabi',
     'n_avg':                512,
     'x0':                   0.01,
     'xmax':                 0.5,
     'dx':                   10e-3,
     'fsAWG':                2.4e9,
     'active_reset':         False,
-    'qubit_reset_time':     300e-6,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
     }
 
-amp,data,nSteps = qb.pulsed_exp(exp='p-rabi',verbose=1,check_mixers=False)
+amp,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False)
 # plot data
 fitted_pars,error = pt.fit_data(x_vector=amp,y_vector=data,exp='p-rabi',dx=qb.dx,verbose=0)
-pt.plot_p_rabi_data(x_vector=amp,y_vector=data,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,fitted_pars=fitted_pars,device_name=device_name,project=project)
+pt.plot_p_rabi_data(amp,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 qb.update_pi(pi_amp=fitted_pars[1]/2)
 
@@ -105,10 +107,10 @@ qb.update_pi(pi_amp=fitted_pars[1]/2)
 #%% Single Shot Experiment
 
 qb.exp_pars = {
+    'exp':                  'single-shot',
     'num_samples':          512,
     'n_avg':                1,
     'fsAWG':                2.4e9,
-    'qubit_reset_time':     600e-6,
     }
 
 data = qb.single_shot()
@@ -118,7 +120,8 @@ pt.plot_single_shot(data, qb.exp_pars,qb.qb_pars,qb.iteration)
 
 #%% T1 Measurement
 qb.exp_pars = {
-    'n_avg':                1024,
+    'exp':                  'T1',
+    'n_avg':                512,
     'x0':                   100e-9,
     'xmax':                 250e-6,
     'dx':                   2e-6,
@@ -129,15 +132,16 @@ qb.exp_pars = {
 }
 
 
-t,data,nSteps = qb.pulsed_exp(exp='T1',verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=True)
 # plot data
 fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='T1',dx=t[-1]/nSteps,verbose=0)
-pt.plot_T1_data(x_vector=t,y_vector=data,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,fitted_pars=fitted_pars,device_name=device_name,project=project)
+pt.plot_T1_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 
 #%% Ramsey Experiment
 
 qb.exp_pars = {
+    'exp':                  'ramsey',
     'n_avg':                512,
     'x0':                   60e-9,
     'xmax':                 120e-6,
@@ -149,15 +153,17 @@ qb.exp_pars = {
     'tomographic-axis':     'Z',
 }
 
-t,data,nSteps = qb.pulsed_exp(exp='ramsey',verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
 
 # fit & plot data
 fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='ramsey',dx=t[-1]/nSteps*1e6,verbose=0)
-pt.plot_ramsey_data(x_vector=t,y_vector=data,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,fitted_pars=fitted_pars,device_name=device_name,project=project)
+pt.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+qb.update_qb_value('qb_freq', qb.exp_pars['qubit_drive_freq']+fitted_pars[1]*1e6)
 
 #%% tomography Experiment
 
 qb.exp_pars = {
+    'exp':                  'tomography',
     'n_avg':                2,
     'x0':                   100e-9,
     'xmax':                 120e-6,
@@ -170,11 +176,38 @@ qb.exp_pars = {
     'tomographic-axis':     'Z',
 }
 
-t,data2,nSteps = qb.pulsed_exp(exp='tomography',verbose=1,check_mixers=False,save_data=True)
+t,data2,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
 
 # fit & plot data
 fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
-qb.plot_ramsey_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars)
+qb.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+
+#%% State-stabilization Experiment
+
+initial_states = ['X']
+
+qb.wfm_pars = {
+    'tb':       10e-6,
+    'amp':      500e-3,
+    }
+
+qb.exp_pars = {
+    'exp':                  'state-stabilization',
+    'n_avg':                128,
+    'x0':                   100e-9,
+    'xmax':                 1e-6,
+    'dx':                   0.1e-6,
+    'fsAWG':                1.2e9,
+    'amp_q':                0.1,
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
+}
+
+t,data2,nSteps = qb.state_stabilization(initial_states,qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
+
+# fit & plot data
+fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
+qb.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 #%% Virtual Z-Gate Experiment
 
@@ -185,16 +218,15 @@ qb.exp_pars = {
     'dx':                   2,
     'fsAWG':                0.6e9,
     'active_reset':         False,
-    'qubit_reset_time':     300e-6,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
 }
 
 
-phase,data,nSteps = qb.pulsed_exp(exp='z-gate',verbose=1,check_mixers=False,save_data=True)
+phase,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
 # fit & plot data
 fitted_pars,error = qb.fit_data(x_vector=phase,y_vector=data,dx=phase[-1]/nSteps,verbose=0)
-qb.plot_data(x_vector=phase,y_vector=data,fitted_pars=fitted_pars)
+qb.plot_data(phase,data,fitted_pars,qb=qb_name)
 
 #%% Echo Measurement
 
@@ -212,7 +244,7 @@ qb.exp_pars = {
 }
 
 
-t,data,nSteps = qb.pulsed_exp(exp='echo',verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
 fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
 qb.plot_echo_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars)
 

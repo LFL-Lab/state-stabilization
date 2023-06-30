@@ -19,7 +19,7 @@ import instrument_funcs as instfuncs
 from zhinst.utils import create_api_session,convert_awg_waveform
 from zhinst.toolkit import Session,CommandTable,Sequence,Waveforms
 from zhinst.toolkit.waveform import Wave, OutputType
-from utilities import odd,even,roundToBase,gen_arb_wfm
+import utilities as utils #odd,even,roundToBase,gen_arb_wfm
 from scipy.signal.windows import gaussian
 from plotting import plot_mixer_opt
 import re
@@ -194,8 +194,8 @@ class qubit():
         print('-------------Setting HDAWG sequence-------------')
         self.awg.setInt('/dev8233/awgs/0/time',0) # sets AWG sampling rate to 2.4 GHz
         self.sequence = Sequence()
-        self.sequence.code = seqs.gen_seq_code(self.exp,'Z')
-        self.sequence.constants['qubit_reset_time'] = roundToBase(self.qb_pars['qubit_reset_time']*1.17e6)
+        self.sequence.code = seqs.gen_seq_code(self.exp_pars['exp'],'Z')
+        self.sequence.constants['qubit_reset_time'] = utils.roundToBase(self.qb_pars['qubit_reset_time']*1.17e6)
         self.sequence.constants['num_samples'] = self.exp_pars['num_samples']
         N = self.qb_pars['pi_len']
         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
@@ -223,7 +223,6 @@ class qubit():
 
         '''
         result_length=2*self.exp_pars['num_samples']
-        self.exp = 'single-shot'
         self.n_steps = result_length
         
         readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
@@ -256,8 +255,8 @@ class qubit():
         print(f'Measurement time: %.1f s'%duration)
         
         # seperate OFF/pi data (no averaging)
-        data_OFF = np.append(data_OFF, [data[paths[0]][k] for k in even(len(data[paths[0]]))])/4096
-        data_pi =  np.append(data_pi, [data[paths[0]][k] for k in odd(len(data[paths[0]]))])/4096
+        data_OFF = np.append(data_OFF, [data[paths[0]][k] for k in utils.even(len(data[paths[0]]))])/4096
+        data_pi =  np.append(data_pi, [data[paths[0]][k] for k in utils.odd(len(data[paths[0]]))])/4096
 
         self.stop_result_unit(paths) #unsubscribe from QA
 
@@ -280,8 +279,6 @@ class qubit():
         instfuncs.set_output('qubit',False)
         inst = self.qa
             
-        self.exp = 'spectroscopy'
-        
         if self.exp_pars['on_off']:
             result_length = 2
         else:
@@ -376,7 +373,6 @@ class qubit():
         instfuncs.set_output('rr',True)
         instfuncs.set_LO('rr',self.qb_pars['rr_LO'])
             
-        self.exp = 'spectroscopy'
         self.exp_pars['fsAWG'] = 600e6
         
         if self.exp_pars['on_off']:
@@ -459,7 +455,7 @@ class qubit():
         
         return power_data,I_data,Q_data
 
-    def pulsed_exp(self,exp='t-rabi',verbose=1,check_mixers=False,save_data=True,ssb=False):
+    def pulsed_exp(self,qb='qb1',verbose=1,device_name='',check_mixers=False,save_data=True,ssb=False):
         
         '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
         source = 2
@@ -474,32 +470,18 @@ class qubit():
         self.enable_awg(self.qa,enable=0)
         self.qa_result_reset()
         
-        self.exp = exp
 
         # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
         # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
         # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
         # requirement of the AWG is satisfied.
-        if self.exp == 'p-rabi' or self.exp == 'z-gate':
-            self.x0 = self.exp_pars['x0']
-            self.xmax = self.exp_pars['xmax']
-            self.dx = self.exp_pars['dx']
-            x_array = np.arange(self.x0,self.xmax+self.dx/2,self.dx)
-            self.n_steps = len(x_array)
+        if self.exp_pars['exp'] == 'p-rabi' or self.exp_pars['exp'] == 'z-gate':
+            self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
         else:
-            self.n_points,self.n_steps,self.x0,self.xmax,self.dx = self.calc_steps(verbose=verbose)
-            
-        #sets the modulation ON or OFF. Should be ON 99% of the time
-        if self.qb_pars['qb_IF'] != 0:
-            self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
-            self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
-        else:
-            self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
-        
-        # adjusts the sampling rate of the AWG
-        self.awg.setInt('/dev8233/awgs/0/time',int(np.log2(2.4e9/self.exp_pars['fsAWG']))) # sets AWG sampling rate to 600 MHz
+            self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.exp_pars,verbose)
+          
+        # setup HDAWG
         self.setup_awg()
-        
         # setup QA AWG
         self.setup_qa_awg(ssb) # setup QA AWG for readout
         
@@ -520,9 +502,7 @@ class qubit():
             timeout = 1.2*exp_dur
 
         sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
-
         self.enable_awg(self.qa,enable=1) # start the readout sequence
-
         self.qa_result_enable() # arm the qa
 
         str_meas = time.time()
@@ -537,7 +517,6 @@ class qubit():
         self.enable_awg(self.awg, enable = 0)
         self.enable_awg(self.qa, enable = 0)
 
-
         end_meas = time.time()
         print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
         
@@ -545,7 +524,7 @@ class qubit():
         # correct values for the x-axis
         x_array = self.get_xdata_frm_ct()[0]
         
-        if self.exp != 'p-rabi' and self.exp != 'z-gate':
+        if self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
             x_array = x_array/self.exp_pars['fsAWG']
             
         norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
@@ -559,7 +538,7 @@ class qubit():
             results = [[I],[Q]]
 
         if save_data:
-            self.save_data(project,device_name,data=np.vstack((x_array,results)))
+            self.save_data(qb,device_name,data=np.vstack((x_array,results)))
             
         return x_array,results,self.n_steps
         
@@ -584,10 +563,10 @@ class qubit():
         #     et = time.time()
         #     print('Replacing waveforms took: %.1f ms'%(1e3*(et-bt)))
 
-    def state_stabilization(self,verbose=True):
+    def state_stabilization(self,initial_states=[],qb='',device_name='',check_mixers=False,verbose=True,save_data = False):
         
         '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
-
+        source = 2
         # update qubit IF frequency
         self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
         self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
@@ -597,35 +576,20 @@ class qubit():
         self.enable_awg(self.awg,enable=0)
         self.enable_awg(self.qa,enable=0)
         self.qa_result_reset()
-        
         # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
         # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
         # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
         # requirement of the AWG is satisfied.
-        if self.exp == 'p-rabi' or self.exp == 'z-gate':
-            self.x0 = self.exp_pars['x0']
-            self.xmax = self.exp_pars['xmax']
-            self.dx = self.exp_pars['dx']
-            x_array = np.arange(self.x0,self.xmax+self.dx/2,self.dx)
-            self.n_steps = len(x_array)
-        else:
-            self.n_points,self.n_steps,self.x0,self.xmax,self.dx = self.calc_steps(verbose)
-            
-        #sets the modulation ON or OFF. Should be ON 99% of the time
-        if self.qb_pars['qb_IF'] != 0:
-            self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
-            self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
-        else:
-            self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
+        self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.exp_pars,verbose)
         
-        # adjusts the sampling rate of the AWG
-        self.awg.setInt('/dev8233/awgs/0/time',int(np.log2(2.4e9/self.exp_pars['fsAWG']))) # sets AWG sampling rate to 600 MHz
-        
+        self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
+        self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
+        self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
         # setup QA AWG
         self.setup_qa_awg(ssb=False) # setup QA AWG for readout
         
         # setup QA Result unit
-        self.config_qa(result_length=self.n_steps,source=source,ssb=ssb) # configure UHFQA result unit, source = 2 means data is rotated
+        self.config_qa(result_length=self.n_steps,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
         self.qa.sync()
         
         # setup active reset if applicable
@@ -642,38 +606,31 @@ class qubit():
 
         sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
 
-
-        for i in ['X','Y','Z']:
-            self.setup_awg()
-        self.enable_awg(self.qa,enable=1) # start the readout sequence
-
-        self.qa_result_enable() # arm the qa
-
-        str_meas = time.time()
-        self.enable_awg(self.awg,enable=1) #runs the drive sequence
-        data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2*timeout) # retrieve data from UHFQA
-
-        for path, samples in data.items():
-            sweep_data[path] = np.append(sweep_data[path], samples) 
-
-        # reset QA result unit and stop AWGs
-        self.stop_result_unit(paths)
-        self.enable_awg(self.awg, enable = 0)
-        self.enable_awg(self.qa, enable = 0)
-
-
-        end_meas = time.time()
-        print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+        data = np.zeros((len(initial_states),3,self.n_steps))
+        
+        for j,s0 in enumerate(initial_states):
+            for i,st in enumerate(['X','Y','Z']):
+                self.exp_pars['tomographic-axis'] = i
+                self.setup_awg()
+                self.enable_awg(self.qa,enable=1) # start the readout sequence
+                self.qa_result_enable() # arm the qa
+                str_meas = time.time()
+                self.enable_awg(self.awg,enable=1) #runs the drive sequence
+                temp = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2) # retrieve data from UHFQA
+                end_meas = time.time()
+                print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+                for path, samples in temp.items():
+                    sweep_data[path] = np.append(sweep_data[path], samples) 
+                # reset QA result unit and stop AWGs
+                self.stop_result_unit(paths)
+                norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
+                data[j,i,:] = sweep_data[paths[0]][0:self.n_steps]/norm # normalizes the data according to the integration length
+                
         
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
         # correct values for the x-axis
         x_array = self.get_xdata_frm_ct()[0]
         
-        if self.exp != 'p-rabi' and self.exp != 'z-gate':
-            x_array = x_array/self.exp_pars['fsAWG']
-            
-        norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-        data = sweep_data[paths[0]][0:self.n_steps]/norm # normalizes the data according to the integration length
         
         if source == 2 or source == 1:
             results = data
@@ -683,23 +640,36 @@ class qubit():
             results = [[I],[Q]]
 
         if save_data:
-            self.save_data(project,device_name,data=np.vstack((x_array,results)))
+            self.save_data(device_name,data=np.vstack((x_array,results)))
             
         return x_array,results,self.n_steps 
+    
     #%% setup_HDAWG
     def setup_awg(self):
         
+        # setup frequencies and modulation mode
+        #sets the modulation ON or OFF. Should be ON 99% of the time
+        if self.qb_pars['qb_IF'] != 0:
+            self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
+            self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
+        else:
+            self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
+        # adjusts the sampling rate of the AWG
+        self.awg.setInt('/dev8233/awgs/0/time',int(np.log2(2.4e9/self.exp_pars['fsAWG']))) # sets AWG sampling rate to 600 MHz
         # Initialize sequence class
         self.sequence = Sequence()
         # setup sequence code
-        self.sequence.code = seqs.gen_seq_code(self.exp,self.exp_pars['tomographic-axis'])
+        self.sequence.code = seqs.gen_seq_code(self.exp_pars['exp'],self.exp_pars['tomographic-axis'])
         # setup constants
-        seqs.setup_seq_pars(self.sequence,self.exp,self.exp_pars,self.qb_pars,self.n_steps)
+        seqs.setup_seq_pars(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars,self.n_steps)
         # setup waveforms
-        self.sequence = seqs.setup_waveforms(self.sequence,self.exp,self.exp_pars,self.qb_pars,self.n_points)
+        if self.exp_pars['exp'] == 'state-stabilization':
+            self.sequence = seqs.setup_waveforms(self.sequence,self.exp_pars['exp'],self.wfm_pars,self.exp_pars,self.qb_pars,self.n_points)
+        else:
+            self.sequence = seqs.setup_waveforms(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars,self.n_points)
         # setup command table 
-        if self.exp != 'spectroscopy':
-            ct = seqs.make_ct(self.hdawg_core,self.exp,self.exp_pars,self.x0,self.dx,self.n_steps)
+        if self.exp_pars['exp'] != 'spectroscopy':
+            ct = seqs.make_ct(self.hdawg_core,self.exp_pars['exp'],self.exp_pars,self.x0,self.dx,self.n_steps)
         else:
             ct = {}
         # upload everything to awg
@@ -711,7 +681,7 @@ class qubit():
         self.sequence = Sequence()
         self.sequence.code = seqs.mixer_calib_sequence()
         self.sequence.constants['amp'] = amp
-        self.sequence.constants['N'] = roundToBase(1024)
+        self.sequence.constants['N'] = utils.roundToBase(1024)
         if inst == self.awg:
             with self.hdawg_core.set_transaction():
                     self.hdawg_core.awgs[0].load_sequencer_program(self.sequence)
@@ -737,7 +707,7 @@ class qubit():
         """
         
         self.qa_sequence.waveforms = Waveforms() # initialize waveforms
-        N = roundToBase(self.qb_pars['readout_length']*1.8e9)
+        N = utils.roundToBase(self.qb_pars['readout_length']*1.8e9)
         
         if ssb:
             w_IF = 2*pi*self.qb_pars['rr_IF']/10
@@ -752,7 +722,7 @@ class qubit():
             self.qa_sequence.waveforms[0] = (Wave(self.qb_pars['amp_r']*np.ones(N), name="ro_pulse_I", output=OutputType.OUT1),
                     Wave(np.zeros(N), name="ro_pulse_Q", output=OutputType.OUT2))
         
-        if self.exp == 'spectroscopy':
+        if self.exp_pars['exp'] == 'spectroscopy':
             self.qa_sequence.constants['n_avg'] = self.n_steps 
         else:
             self.qa_sequence.constants['n_avg'] = self.exp_pars['n_avg']*self.n_steps 
@@ -771,11 +741,10 @@ class qubit():
         
     def setup_rr_spec(self):
         
-        
         self.qa_sequence = Sequence()
         self.qa_sequence.code = self.rr_spec_sequence()
         self.qa_sequence.waveforms = Waveforms() # initialize waveforms
-        N = roundToBase(self.qb_pars['readout_length']*225e6)
+        N = utils.roundToBase(self.qb_pars['readout_length']*225e6)
         # w_IF = 2*pi*self.qb_pars['rr_IF']
         # a = self.qb_pars['rr_mixer_imbalance'][0]
         # phi = self.qb_pars['rr_mixer_imbalance'][1]
@@ -786,12 +755,12 @@ class qubit():
         #         Wave(ro_pulse_Q, name="ro_pulse_Q", output=OutputType.OUT2))
         # self.qa_sequence.waveforms[0] = (Wave(0.5*np.ones(N), name="ro_pulse_I", output=OutputType.OUT1),
         #         Wave(np.zeros(N), name="ro_pulse_Q", output=OutputType.OUT2))
-        rr_drive_dur = roundToBase(N)
+        rr_drive_dur = utils.roundToBase(N)
         const_pulse = self.qb_pars['amp_r'] * np.ones(rr_drive_dur)
         self.qa_sequence.waveforms[0] = (Wave(const_pulse, name="w_const", output=OutputType.OUT1),
             Wave(np.zeros(N), name="w_zero", output=OutputType.OUT2))
         self.qa_sequence.constants['n_avg'] = self.n_steps 
-        self.qa_sequence.constants['rr_reset_time'] = roundToBase(self.exp_pars['rr_reset_time']*225e6)
+        self.qa_sequence.constants['rr_reset_time'] = utils.roundToBase(self.exp_pars['rr_reset_time']*225e6)
         self.qa_sequence.constants['delay'] = round(self.qb_pars['cav_resp_time']/(4.4e-9))
         
         with self.qa_ses.set_transaction():
@@ -849,7 +818,7 @@ class qubit():
         delay = 0
         bypass_crosstalk=0
         L = 4096
-        #L = roundToBase(self.qb_pars['integration_length']*base_rate,base=1024)
+        #L = utils.roundToBase(self.qb_pars['integration_length']*base_rate,base=1024)
         # L = 8192
         # set modulation frequency of QA AWG to some IF and adjust input range for better resolution
         self.qa.setDouble('/dev2528/sigins/0/range',1.5)
@@ -1079,8 +1048,8 @@ class qubit():
         #     wfm_arr = qubit_free_evol
         if sequence == 'rabi':
             fsAWG = 2.4e9
-            gauss_pulse = gaussian(roundToBase(self.qb_pars['gauss_len']*self.exp_pars['fsAWG']), roundToBase(self.pars['gauss_len']/5*self.exp_pars['fsAWG']))
-            drive_pulse = np.concatenate((gauss_pulse[:len(gauss_pulse)/2],np.ones(roundToBase(Tmax*fsAWG)),gauss_pulse[len(gauss_pulse)/2+1:]))
+            gauss_pulse = gaussian(utils.roundToBase(self.qb_pars['gauss_len']*self.exp_pars['fsAWG']), utils.roundToBase(self.pars['gauss_len']/5*self.exp_pars['fsAWG']))
+            drive_pulse = np.concatenate((gauss_pulse[:len(gauss_pulse)/2],np.ones(utils.roundToBase(Tmax*fsAWG)),gauss_pulse[len(gauss_pulse)/2+1:]))
             # save wfm to file
             self.make_wfm_file(filename='drive_pulse', wfm_data=drive_pulse)
         # elif sequence == 'T1':
@@ -1206,7 +1175,7 @@ class qubit():
     #     '''
 
     #     start = time.time()
-    #     ACpre = mu*np.ones(roundToBase(1500e-9*fs))
+    #     ACpre = mu*np.ones(utils.roundToBase(1500e-9*fs))
     #     pi2 = amp*np.ones(int(fs*pi2Width))
     #     pi2pre = 0 * ACpre
     #     ac_noise = np.random.normal(mu, sigma, 2*n_points)
@@ -1559,12 +1528,12 @@ class qubit():
    
     def sort_data(self,data,paths):
         
-        if self.exp == 'spectroscopy':
+        if self.exp_pars['exp'] == 'spectroscopy':
             data_ON = []
             if self.exp_pars['on_off']:
                 data_OFF = []
-                data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in self.even(len(data[paths[0]]))]))
-                data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in self.odd(len(data[paths[0]]))]))
+                data_OFF = np.append(data_OFF, np.mean([data[paths[0]][k] for k in utils.even(len(data[paths[0]]))]))
+                data_ON =  np.append(data_ON, np.mean([data[paths[0]][k] for k in utils.odd(len(data[paths[0]]))]))
             else:
                 data_ON =  np.append(data_ON, np.mean(data[paths[0]]))
         else:
@@ -1600,7 +1569,7 @@ class qubit():
             # upload waveforms
             self.hdawg_core.awgs[0].write_to_waveform_memory(self.sequence.waveforms)
             # upload command table if applicable
-            if self.exp != 'spectroscopy' and self.exp != 'single-shot':
+            if self.exp_pars['exp'] != 'spectroscopy' and self.exp_pars['exp'] != 'single-shot':
                 self.hdawg_core.awgs[0].commandtable.upload_to_device(ct)
             
         self.awg.sync()
@@ -1611,10 +1580,10 @@ class qubit():
         x_array = np.zeros((1,self.n_steps))
         ct = self.hdawg_core.awgs[0].commandtable.load_from_device()
         for i in range(self.n_steps):
-            if self.exp == 'p-rabi':
+            if self.exp_pars['exp'] == 'p-rabi':
                 value = ct.table[i].amplitude0.value
                 x_array[0][i] = value
-            elif self.exp != 'p-rabi' and self.exp != 'z-gate':
+            elif self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
                 value = ct.table[i].waveform.length
                 x_array[0][i] = int(value)
          
@@ -1733,9 +1702,9 @@ class qubit():
         self.awg.set('/dev8233/sines/1/phaseshift',90+phi)
         
                 
-    def save_data(self,project,device_name,par_dict={},data=[]):
+    def save_data(self,qb,device_name,par_dict={},data=[]):
         '''Saves data to the appropriate folder'''
-        dir_path = f'D:\\{project}\\{device_name}\\{self.exp}-data'
+        dir_path = f'D:\\state-stabilization\\{device_name}\\{qb}\\{self.exp_pars["exp"]}-data'
 
         if os.path.exists(dir_path):
             pass
@@ -1749,10 +1718,10 @@ class qubit():
         except:
             self.iteration = 1
         
-        if self.exp =='spectroscopy':
-            filename = f'\\{self.exp}'+f'{self.exp_pars["element"]}_data_{self.iteration}.csv'
+        if self.exp_pars['exp'] =='spectroscopy':
+            filename = f'\\{self.exp_pars["exp"]}'+f'{self.exp_pars["element"]}_data_{self.iteration}.csv'
         else:
-            filename = f'\\{self.exp}'+f'_data_{self.iteration}.csv'
+            filename = f'\\{self.exp_pars["exp"]}'+f'_data_{self.iteration}.csv'
         with open(dir_path+filename,"w",newline="") as datafile:
             writer = csv.writer(datafile)
             writer.writerow(self.qb_pars.keys())
@@ -1762,45 +1731,45 @@ class qubit():
             for i in range(data.shape[0]):
                 writer.writerow(data[i][:])
     
-    def calc_steps(self,verbose=1):
-        """
-        Calculates the number of steps in the sequence and number of points in the waveform used in the experiment. The final stepsize of the sequence
-        might be different than the one specified due to the fact that the AWG has a granularity of the waveform is 16 samples.
+    # def calc_steps(self,verbose=1):
+    #     """
+    #     Calculates the number of steps in the sequence and number of points in the waveform used in the experiment. The final stepsize of the sequence
+    #     might be different than the one specified due to the fact that the AWG has a granularity of the waveform is 16 samples.
 
-        Args:
-            sequence (string, optional): Type of experiment (rabi,ramsey,T1, echo). Defaults to 'ramsey'.
-            fsAWG (float, optional): HDAWG sampling rate. Defaults to 1.2e9.
-            stepSize (float, optional): dt for sequence. Defaults to 10e-9.
-            Tmax (float, optional): maximum experiment array length. For example if Tmax = 5e-6 for ramsey experiment then maximum pulse separation is 5us. Defaults to 5e-6.
-            verbose (boolean, optional):  Defaults to 1.
+    #     Args:
+    #         sequence (string, optional): Type of experiment (rabi,ramsey,T1, echo). Defaults to 'ramsey'.
+    #         fsAWG (float, optional): HDAWG sampling rate. Defaults to 1.2e9.
+    #         stepSize (float, optional): dt for sequence. Defaults to 10e-9.
+    #         Tmax (float, optional): maximum experiment array length. For example if Tmax = 5e-6 for ramsey experiment then maximum pulse separation is 5us. Defaults to 5e-6.
+    #         verbose (boolean, optional):  Defaults to 1.
 
-        Returns:
-            n_points (int): number of waveform points.
-            n_steps (int): number of sequence steps.
-            t0 (int): sequence step size in units of samples 1/fsAWG.
-            dt (int): starting sequence point in units of samples.
+    #     Returns:
+    #         n_points (int): number of waveform points.
+    #         n_steps (int): number of sequence steps.
+    #         t0 (int): sequence step size in units of samples 1/fsAWG.
+    #         dt (int): starting sequence point in units of samples.
 
-        """
-        t0 = roundToBase(self.exp_pars['fsAWG']*self.exp_pars['x0'])
-        dt = roundToBase(self.exp_pars['fsAWG']*self.exp_pars['dx'])
-        n_points = roundToBase(self.exp_pars['xmax']*self.exp_pars['fsAWG']) # this ensures there is an integer number of time points
-        n_steps = int((n_points-t0)/dt) # 1 is added to include the first point
-        tmax = dt*n_steps
+    #     """
+    #     t0 = utils.roundToBase(self.exp_pars['fsAWG']*self.exp_pars['x0'])
+    #     dt = utils.roundToBase(self.exp_pars['fsAWG']*self.exp_pars['dx'])
+    #     n_points = utils.roundToBase(self.exp_pars['xmax']*self.exp_pars['fsAWG']) # this ensures there is an integer number of time points
+    #     n_steps = int((n_points-t0)/dt) # 1 is added to include the first point
+    #     tmax = dt*n_steps
        
-        if verbose == 1:
-            print("dt is %.1f ns (%d pts) ==> f_s = %.1f MHz \nn_points = %d | n_steps is %d | Pulse length start = %.1f ns (%d pts)" %(dt/self.exp_pars['fsAWG']*1e9,dt,1e-6*self.exp_pars['fsAWG']/dt,n_points,n_steps,t0*1e9/self.exp_pars['fsAWG'],t0))
-        else:
-            pass
+    #     if verbose == 1:
+    #         print("dt is %.1f ns (%d pts) ==> f_s = %.1f MHz \nn_points = %d | n_steps is %d | Pulse length start = %.1f ns (%d pts)" %(dt/self.exp_pars['fsAWG']*1e9,dt,1e-6*self.exp_pars['fsAWG']/dt,n_points,n_steps,t0*1e9/self.exp_pars['fsAWG'],t0))
+    #     else:
+    #         pass
         
-        if n_steps > 1024:
-            raise Exception('Error: The maximum number of steps is 1024')
+    #     if n_steps > 1024:
+    #         raise Exception('Error: The maximum number of steps is 1024')
 
-        return n_points,n_steps,t0,tmax,dt
+    #     return n_points,n_steps,t0,tmax,dt
     
     def update_qb_value(self,key,value):
         '''Updates qubit dictionary value and writes new dictionary to json file'''
         if key == 'gauss_len':
-            value = roundToBase(value)
+            value = utils.roundToBase(value)
         else:
             pass
         
@@ -1921,7 +1890,7 @@ class qubit():
             
         #     if self.exp == 'spectroscopy':
                 
-        #         qubit_drive_dur = roundToBase(self.exp_pars['satur_dur']*self.exp_pars['fsAWG'])
+        #         qubit_drive_dur = utils.roundToBase(self.exp_pars['satur_dur']*self.exp_pars['fsAWG'])
         #         const_pulse = 2*self.exp_pars['amp_q'] * np.ones(qubit_drive_dur)
         #         self.sequence.waveforms[0] = (Wave(const_pulse, name="w_const", output=OutputType.OUT1),
         #             Wave(np.zeros(qubit_drive_dur), name="w_zero", output=OutputType.OUT2))
@@ -1990,7 +1959,7 @@ class qubit():
         #     elif self.exp == 'z-gate':
         #         N = self.qb_pars['pi_len']
         #         pi2_pulse = self.qb_pars['pi_half_amp'] * gaussian(N,N/5)
-        #         self.n_points = roundToBase(1e-6*self.exp_pars['fsAWG'])
+        #         self.n_points = utils.roundToBase(1e-6*self.exp_pars['fsAWG'])
                 
         #         self.sequence.waveforms[0] = (Wave(pi2_pulse, name="w_pi2_I", output=OutputType.OUT1|OutputType.OUT2),
         #             Wave(np.zeros(N), name="w_pi2_Q", output=OutputType.OUT1|OutputType.OUT2))

@@ -10,7 +10,7 @@ import numpy as np
 from scipy.signal.windows import gaussian
 from zhinst.toolkit.waveform import Wave, OutputType
 from zhinst.toolkit import CommandTable,Sequence,Waveforms
-from utilities import roundToBase
+from utilities import roundToBase,gen_arb_wfm
 
 
 #%% sequence_code_funcs
@@ -41,18 +41,18 @@ def gen_seq_code(exp,axis):
     
     return code  
   
-def prepare_state(awg_program, state='X'):
+# def prepare_state(awg_program, state='X'):
     
-    # if state == 'X':
-    #     code = '''playWave(1,2,w_prep_I,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
-    # elif state == 'Y':
-    #     code = '''playWave(1,2,w_prep_Q,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
-    # elif state == '0':
-    #     code = ''''''
-    # elif state == '1':
-    #     code = '''playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);'''
+#     # if state == 'X':
+#     #     code = '''playWave(1,2,w_prep_I,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
+#     # elif state == 'Y':
+#     #     code = '''playWave(1,2,w_prep_Q,1,2,w_prep_Q,AWG_RATE_2400MHZ);'''
+#     # elif state == '0':
+#     #     code = ''''''
+#     # elif state == '1':
+#     #     code = '''playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);'''
         
-    return code
+#     return code
  
 def trigger_readout_sequence():
     
@@ -76,11 +76,9 @@ def finalize_sequence(awg_program,state='X',axis='Z'):
     
     # awg_program = awg_program.replace('_prepare_state_',prepare_state(awg_program,state))
     awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
-    awg_program = awg_program.replace('_tomographic_pulse_',tomographic_pulse_sequence(axis))
+    # awg_program = awg_program.replace('_tomographic_pulse_',tomographic_pulse_sequence(axis))
     
     return awg_program
-
-
 
 def spec_sequence(on_off=True):
 
@@ -337,7 +335,7 @@ def reset_sequence():
     return awg_program
 
 #%% waveform_funcs
-def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_length = 16 , custom_wfm = [], output_order='1' ):
+def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1.0, pulse_length = 16 , output_order='1' ):
     '''
     Generates string to be used for generating waveforms to be uploaded to the AWG 
 
@@ -352,7 +350,6 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
     amplitude:         float           amplitude of waveform, will be defined 
     pulse_length:      int             pulse length in number of samples; for
                                         Zurich Instruments, it's in base 16. 
-    custom_wfm:        list           custom waveform to be applied to qubit after state preparation
     output_order:      float
 
 
@@ -374,7 +371,7 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
     elif pulse_type == 'arb':
-        pulse = amplitude * custom_wfm
+        pulse = gen_arb_wfm('rising',wfm_pars)
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -395,7 +392,7 @@ def make_wave(pulse_type='gauss', wave_name='wave', amplitude = 1.0, pulse_lengt
 
     return pulse, wave_name, out
 
-def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
+def setup_waveforms(sequence,exp='t-rabi',wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
     ''' Creates the waveforms Necessary for Each Experiment'''
 
     sequence.waveforms = Waveforms()
@@ -688,12 +685,13 @@ def setup_waveforms(sequence,exp='t-rabi',exp_pars={},qb_pars={},n_points=1024):
                         pulse_length = N,
                         output_order = '21'))
         )  
-         
+
          sequence.waveforms[2] = (
          Wave(*make_wave(pulse_type = 'arb',
                          wave_name = 'w_arb_I',
                          amplitude = 0,
                          pulse_length = n_points,
+                         wfm_pars = wfm_pars,
                          output_order = '12')), 
          Wave(*make_wave(pulse_type = 'zero',
                          wave_name = 'w_zero_Q',
@@ -753,7 +751,7 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
 # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
 def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100,amp=[1.0,1.0],theta=[90,90]):
    
-    if exp == 'p-rabi' or exp == 'state-stabilization':
+    if exp == 'p-rabi':
         sweep_var = 'amp'
     elif exp == 'z-gate':
         sweep_var = 'phase'
@@ -779,8 +777,8 @@ def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100,amp=[1.0,1.0],thet
         ct_sweep_phase(ct,exp_pars,wfm_index,n_steps)
         
     if exp == 'state-stabilization':
-        ct = arb_pulse(ct,n_steps,wfm_index,amp[0],theta[0])
-        ct = arb_pulse(ct,n_steps+1,wfm_index,amp[1],theta[1])
+        ct = arb_pulse(ct,n_steps,0,amp[0],theta[0])
+        ct = arb_pulse(ct,n_steps+1,1,amp[1],theta[1])
         
     return ct
     

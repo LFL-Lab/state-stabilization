@@ -37,7 +37,7 @@ def gen_seq_code(exp,axis):
     elif exp == 'single-shot':
         code = single_shot_sequence()
     
-    code = finalize_sequence(code,state='1',axis=axis)
+    code = finalize_sequence(code,axis)
     
     return code  
   
@@ -63,20 +63,17 @@ def trigger_readout_sequence():
 
 def tomographic_pulse_sequence(axis='Z'):
     
-    if axis == 'X':
-        awg_program = '''playWave(1,2,w_pi2X_I,1,2,w_pi2X_Q,AWG_RATE_2400MHZ);'''
-    elif axis == 'Y':
-        awg_program = '''playWave(1,2,w_pi2Y_I,1,2,w_pi2Y_Q,AWG_RATE_2400MHZ);'''
+    if axis == 'X' or axis == 'Y':
+        awg_program = '''executeTableEntry(n_steps);'''
     elif axis == 'Z':
         awg_program = ''''''
         
     return awg_program
 
-def finalize_sequence(awg_program,state='X',axis='Z'):
+def finalize_sequence(awg_program,axis='Z'):
     
-    # awg_program = awg_program.replace('_prepare_state_',prepare_state(awg_program,state))
     awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
-    # awg_program = awg_program.replace('_tomographic_pulse_',tomographic_pulse_sequence(axis))
+    awg_program = awg_program.replace('_tomography_pulse_',tomographic_pulse_sequence(axis))
     
     return awg_program
 
@@ -122,10 +119,10 @@ def time_rabi_sequence(tomography=False):
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
-                playWave(1,2,w_gauss_rise_I,1,2,w_zero1);
+                executeTableEntry(n_steps+1);
                 executeTableEntry(i);
-                playWave(1,2,w_gauss_fall_I,1,2,w_zero2);
-                _tomographic_pulse_
+                executeTableEntry(n_steps+2);
+                _tomography_pulse_
                 _trigger_readout_
       }
     }'''
@@ -146,7 +143,7 @@ def power_rabi_sequence(tomography=False):
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
                 executeTableEntry(i);
-                _tomographic_pulse_
+                _tomography_pulse_
                 _trigger_readout_
       }
     }'''
@@ -165,9 +162,9 @@ def T1_sequence(tomography=False):
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
-                playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
+                executeTableEntry(n_steps);
                 executeTableEntry(i);
-                _tomographic_pulse_
+                _tomography_pulse_
                 _trigger_readout_
       }
     }'''
@@ -187,10 +184,10 @@ def ramsey_sequence(tomography=False):
         // Beginning of the core sequencer program executed on the HDAWG at run time
         repeat(n_avg){
             for (i=0; i<n_steps; i++) {
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
+                    executeTableEntry(n_steps+1);
                     executeTableEntry(i);
-                    playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                    _tomographic_pulse_
+                    executeTableEntry(n_steps+1);
+                    _tomography_pulse_
                     _trigger_readout_
           }
         }'''
@@ -207,12 +204,12 @@ def echo_sequence(tomography=False):
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
-                playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
+                executeTableEntry(n_steps+1);
                 executeTableEntry(i);
-                playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
+                executeTableEntry(n_steps+2);
                 executeTableEntry(i);
-                playWave(1,2,w_pi2_I,1,2,w_pi2_Q,AWG_RATE_2400MHZ);
-                _tomographic_pulse_
+                executeTableEntry(n_steps+1);
+                _tomography_pulse_
                 _trigger_readout_
       }
     }'''
@@ -234,7 +231,6 @@ def z_gate_sequence(tomography=False):
                 executeTableEntry(0);
                 playWave(1,2,w_zero);
                 executeTableEntry(i);
-                _tomographic_pulse_
                 _trigger_readout_
       }
     }'''
@@ -252,13 +248,7 @@ def tomography_sequence():
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
                 _prepare_state_
-                //incrementSinePhase(0,10);
-                incrementSinePhase(1,10);
-               // _wait_period_
                executeTableEntry(i);
-               //incrementSinePhase(0,-90);
-               incrementSinePhase(1,270);
-                _tomographic_pulse_
                 _trigger_readout_
       }
     }'''
@@ -278,7 +268,7 @@ def state_stabilization_sequence():
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
                 executeTableEntry(n_steps);
-               executeTableEntry(i);
+                executeTableEntry(i);
                 executeTableEntry(n_steps+1);
                 _trigger_readout_
       }
@@ -338,7 +328,6 @@ def reset_sequence():
 def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1.0, pulse_length = 16 , output_order='1' ):
     '''
     Generates string to be used for generating waveforms to be uploaded to the AWG 
-
     
     Input:             Type:            Description:
     pulse_type:        string           type of pulse: Gaussian, Constant, Pi, Pi/2, Rise and 
@@ -349,7 +338,7 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
     wave_name:         string          name that will be uploaded to awg to define the waveform
     amplitude:         float           amplitude of waveform, will be defined 
     pulse_length:      int             pulse length in number of samples; for
-                                        Zurich Instruments, it's in base 16. 
+                                        Zurich Instruments, it's in base_theta 16. 
     output_order:      float
 
 
@@ -392,9 +381,9 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
 
     return pulse, wave_name, out
 
-def setup_waveforms(sequence,exp='t-rabi',wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
+def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
     ''' Creates the waveforms Necessary for Each Experiment'''
-
+    exp = exp_pars['exp']
     sequence.waveforms = Waveforms()
 
     if exp == 'spectroscopy':
@@ -441,7 +430,6 @@ def setup_waveforms(sequence,exp='t-rabi',wfm_pars={},exp_pars={},qb_pars={},n_p
                         pulse_length = int(N/2), ## Not sure about this one... 
                         output_order = '12'))
     )
-
         sequence.waveforms[2] = (
         Wave(*make_wave(pulse_type = 'constant',
                         wave_name = 'w_const_I',
@@ -454,6 +442,21 @@ def setup_waveforms(sequence,exp='t-rabi',wfm_pars={},exp_pars={},qb_pars={},n_p
                         pulse_length = n_points,
                         output_order = '12'))
     )
+        
+        sequence.waveforms[3] = (
+        Wave(*make_wave(pulse_type = 'gaussian',
+                        wave_name = 'w_gauss_I',
+                        amplitude = 1,
+                        pulse_length = qb_pars['pi_len'],
+                        output_order = '12')), 
+        Wave(*make_wave(pulse_type = 'zero',
+                        wave_name = 'w_gauss_Q',
+                        amplitude = 0,
+                        pulse_length = qb_pars['pi_len'],
+                        output_order = '12'))
+        )
+        
+        
 
     elif exp == 'p-rabi':
         N = qb_pars['gauss_len']
@@ -673,20 +676,20 @@ def setup_waveforms(sequence,exp='t-rabi',wfm_pars={},exp_pars={},qb_pars={},n_p
                          output_order = '12'))
          )    
 
-         sequence.waveforms[1] = (
-             Wave(*make_wave(pulse_type = 'pi',
-                        wave_name = 'w_tom_I',
-                        amplitude = 0,
-                        pulse_length = N,
-                        output_order = '21')), 
-             Wave(*make_wave(pulse_type = 'zero',
-                        wave_name = 'w_tom_Q',
-                        amplitude = amp_half,
-                        pulse_length = N,
-                        output_order = '21'))
-        )  
+        #   sequence.waveforms[1] = (
+        #       Wave(*make_wave(pulse_type = 'pi',
+        #                 wave_name = 'w_tom_I',
+        #                 amplitude = 1,
+        #                 pulse_length = N,
+        #                 output_order = '12')), 
+        #       Wave(*make_wave(pulse_type = 'zero',
+        #                 wave_name = 'w_tom_Q',
+        #                 amplitude = 0,
+        #                 pulse_length = N,
+        #                 output_order = '12'))
+        # )  
 
-         sequence.waveforms[2] = (
+         sequence.waveforms[1] = (
          Wave(*make_wave(pulse_type = 'arb',
                          wave_name = 'w_arb_I',
                          amplitude = 0,
@@ -733,7 +736,7 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
     #         break
     #     else:
     #         if key == 'qubit_reset_time':
-    #             value = roundToBase(value*exp_pars['fsAWG']) # converts the reset time from us to num of samples
+    #             value = roundTobase_theta(value*exp_pars['fsAWG']) # converts the reset time from us to num of samples
     #         else:
     #             pass
     #         sequence.constants[key] = value
@@ -749,8 +752,11 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
 
 #%% command_table_funcs
 # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
-def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100,amp=[1.0,1.0],theta=[90,90]):
+def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
    
+    exp = exp_pars['exp']
+    base_theta = 90 + qb_pars['qb_mixer_imbalance'][1] 
+    
     if exp == 'p-rabi':
         sweep_var = 'amp'
     elif exp == 'z-gate':
@@ -760,41 +766,56 @@ def make_ct(hdawg_core,exp,exp_pars={},x0=0,dx=16,n_steps=100,amp=[1.0,1.0],thet
         
     ct = init_ct(hdawg_core)
     
-    if exp == 't-rabi' or exp == 'echo' or exp == 'state-stabilization':
+    if exp == 't-rabi' or exp == 'echo':
         wfm_index = 2
     elif exp == 'p-rabi'  or exp == 'z-gate':
         wfm_index = 0
-    elif exp == 'T1':
+    else:
         wfm_index = 1
-    elif exp == 'ramsey' or exp == 'tomography':
-        wfm_index = 1
+   
         
     if sweep_var == 'time':
-        ct_sweep_length(ct,wfm_index,x0,dx,n_steps)
+        ct_sweep_length(ct,wfm_index,qb_pars,x0,dx,n_steps)
     elif sweep_var == 'amp':
-        ct_sweep_amp(ct,wfm_index,exp_pars,n_steps)
+        ct_sweep_amp(ct,wfm_index,exp_pars,qb_pars,n_steps)
     elif sweep_var == 'phase':
         ct_sweep_phase(ct,exp_pars,wfm_index,n_steps)
         
     if exp == 'state-stabilization':
-        ct = arb_pulse(ct,n_steps,0,amp[0],theta[0])
-        ct = arb_pulse(ct,n_steps+1,1,amp[1],theta[1])
-        
+        wfm_index = 0
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct = arb_pulse(ct,n_steps,wfm_index,amp_prep,base_theta,theta_prep) # preparation pulse
+        ct = arb_pulse(ct,n_steps+1,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
+    elif exp == 't-rabi':
+        wfm_index = 3
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct = arb_pulse(ct,n_steps,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
+        wfm_index = 0 # gauss rise
+        ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0)
+        wfm_index = 1 # gauss fall
+        ct = arb_pulse(ct,n_steps+2,wfm_index,1,base_theta,0)
+    elif exp == 'T1':
+        wfm_index = 0
+        ct = arb_pulse(ct,n_steps,wfm_index,qb_pars['pi_amp'],base_theta,0) # pi_pulse
     return ct
     
-def ct_sweep_length(ct,wfm_index,x0,dx,n_steps=100):
+def ct_sweep_length(ct,wfm_index,qb_pars,x0,dx,n_steps=100):
     for i in range(n_steps):
         wfm_length = x0 + i * dx
         ct.table[i].waveform.index = wfm_index
         ct.table[i].waveform.length = wfm_length
+        ct.table[i].phase0.value = 0
+        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
         
-def ct_sweep_amp(ct,wfm_index,exp_pars={},n_steps=100):
+def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
     
     for i in range(n_steps):
         amp = exp_pars['x0'] + i * exp_pars['dx']
         ct.table[i].waveform.index = wfm_index
         ct.table[i].amplitude0.value = amp
         ct.table[i].amplitude1.value = amp
+        ct.table[i].phase0.value = 0
+        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
 
 def ct_sweep_phase(ct,exp_pars,wfm_index,n_steps):
     
@@ -812,13 +833,81 @@ def init_ct(hdawg_core):
     
     return ct
 
-def arb_pulse(ct,table_index,wfm_index,amp,theta):
+def arb_pulse(ct,table_index,wfm_index,amp,base_theta,theta):
     
     ct.table[table_index].waveform.index = wfm_index
+    ct.table[table_index].waveform.samplingRateDivider = 0
     ct.table[table_index].amplitude0.value = amp
     ct.table[table_index].amplitude1.value = amp
-    ct.table[table_index].phase0.value = 0
-    ct.table[table_index].phase1.value = theta
+    ct.table[table_index].phase0.value = theta
+    ct.table[table_index].phase1.value = base_theta +theta
     
     return ct
+
+def determine_axes(exp_pars,qb_pars):
+    print(f"Preparing {exp_pars['initial-state']} state")
+    print(f"Measuring along {exp_pars['tomographic-axis']} axis")
     
+    base_amp = qb_pars['pi_amp']
+    
+    if exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'X':
+        theta_prep = theta_tom = 0
+        amp_prep = amp_tom = 0.5
+    elif exp_pars['initial-state'] == 'Y' and exp_pars['tomographic-axis'] == 'X':
+        theta_prep = 90
+        theta_tom = 0
+        amp_prep = amp_tom = 0.5
+    elif exp_pars['initial-state'] == '0' and exp_pars['tomographic-axis'] == 'X':
+        theta_prep = 0
+        theta_tom = 0
+        amp_prep = 0
+        amp_tom = 0.5
+    elif exp_pars['initial-state'] == '1' and exp_pars['tomographic-axis'] == 'X':
+        theta_prep = 0
+        theta_tom = 0
+        amp_prep = 1
+        amp_tom = 0.5
+    elif exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'Y':
+        theta_prep = 0
+        theta_tom = 90
+        amp_prep = amp_tom = 0.5
+    elif exp_pars['initial-state'] == 'Y' and exp_pars['tomographic-axis'] == 'Y':
+        theta_prep = theta_tom = 90
+        amp_prep = amp_tom = 0.5
+    elif exp_pars['initial-state'] == '0' and exp_pars['tomographic-axis'] == 'Y':
+        theta_prep = 0
+        theta_tom = 90
+        amp_prep = 0
+        amp_tom = 0.5
+    elif exp_pars['initial-state'] == '1' and exp_pars['tomographic-axis'] == 'Y':
+        theta_prep = 0
+        theta_tom = 90
+        amp_prep = 1
+        amp_tom = 0.5
+    elif exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'Z':
+        theta_prep = 0
+        theta_tom = 0
+        amp_prep = 0.5
+        amp_tom = 0
+    elif exp_pars['initial-state'] == 'Y' and exp_pars['tomographic-axis'] == 'Z':
+        theta_prep = 90
+        theta_tom = 0
+        amp_prep = 0.5
+        amp_tom = 0
+    elif exp_pars['initial-state'] == '0' and exp_pars['tomographic-axis'] == 'Z':
+        theta_prep = 0
+        theta_tom = 0
+        amp_prep = 0
+        amp_tom = 0
+    elif exp_pars['initial-state'] == '1' and exp_pars['tomographic-axis'] == 'Z':
+        theta_prep = 0
+        theta_tom = 0
+        amp_prep = 1
+        amp_tom = 0
+    else:
+        print('Invalid combination!!!')
+    
+    amp_prep = amp_prep*base_amp
+    amp_tom = amp_tom*base_amp
+    
+    return theta_prep,theta_tom,amp_prep,amp_tom

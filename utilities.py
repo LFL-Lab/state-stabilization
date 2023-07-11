@@ -113,7 +113,7 @@ def calc_steps(pars,verbose=True):
     t0 = roundToBase(pars['fsAWG']*pars['x0'])
     dt = roundToBase(pars['fsAWG']*pars['dx'])
     n_points = roundToBase(pars['xmax']*pars['fsAWG']) # this ensures there is an integer number of time points
-    n_steps = int((n_points-t0)/dt) # 1 is added to include the first point
+    n_steps = int((n_points-t0)/dt)+1 # 1 is added to include the first point
     tmax = dt*n_steps
    
     if verbose:
@@ -135,3 +135,30 @@ def generate_xarray(pars):
     n_steps = len(x_array)
 
     return x0,xmax,dx,x_array,n_steps
+
+def compute_bloch(data,calib_pars):
+    v_b = np.zeros((1,3))
+    
+    for i in range(len(v_b)):
+        v_b[i] = 1-2*(data[i]-calib_pars[i])/calib_pars[3]
+        
+    return v_b
+
+def compute_rho(vb):
+    
+    iden = [[1,0],[0,1]]
+    sx = [[0,1],[1,0]]
+    sy = [[0,-1j],[1j,0]]
+    sz = [[1,0],[0,-1]]
+    rho = 1/2*(iden+np.multiply(vb[0][0],sx)+np.multiply(vb[0][1],sy)+np.multiply(vb[0][2],sz))
+    
+    return rho
+
+def normalize_data(data):
+    
+    offset = np.mean(data[2,:])
+    amp = (max(data[2,:])-min(data[2,:]))/2
+    
+    normalized_data = (data-offset)/amp
+    
+    return normalized_data

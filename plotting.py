@@ -12,6 +12,7 @@ import pandas as pd
 import scipy as scy
 from qutip import qpt_plot as qptp
 import matplotlib.pyplot as plt
+from utilities import normalize_data
 pi = np.pi
 
 
@@ -326,7 +327,7 @@ def plot_T1_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iter
         
         
 #%% tomography_plots
-def plot_tomography(data):
+def plot_tomography(data,cal_states):
     
     tick_loc = [1,2]
     yticklabels = [r'$|0\rangle$',r'$|1\rangle$']
@@ -341,11 +342,30 @@ def plot_tomography(data):
     ax2.set_yticks(ticks=tick_loc,labels=yticklabels)
     ax2.set_zticks(ticks=ztick_loc)
     
-    
     # plt.xlim(0,2)
     # plt.ylim(0,2)
     # plt.tight_layout()
     # ax1.set_zlabel(r'$|{\rho}|$')
+
+def tom_calib_plot(x_data,y_data,coords,norm=True):
+    
+    x_data = x_data*1e6
+    if not norm:
+        y_data = y_data*1e3
+    else:
+        y_data = normalize_data(y_data)
+        
+    fig, ax = plt.subplots(figsize=(6,4),dpi=150)
+    ax.plot(x_data,y_data[0,:],'-o',color='b',label=r'$\langle X|\psi\rangle$')
+    ax.plot(x_data,y_data[1,:],'-x',color='r',label=r'$\langle Y|\psi\rangle$')
+    ax.plot(x_data,y_data[2,:],'-<',color='k',label=r'$\langle Z|\psi\rangle$')
+    
+    ax.set_xlabel('Delay ($\mu$s)')
+    ax.set_ylabel('Digitizer Voltage (mV)')
+    
+    txt = f"+X = {coords[0]*1e3:.1f} mV\n+Y = {coords[1]*1e3:.1f} mV\n$|1>$ = {coords[2]*1e3:.1f} mV\n"
+    plt.gcf().text(0.95, 0.15, txt, fontsize=14)
+    ax.legend(loc='upper right')
     
 #%% mixer_opt_plots
 def power_plot(freqs,signal,power,fc):
@@ -492,7 +512,7 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
         if fitFunc != 'envelope':
             p0 = [amp,f,phi,tau,offset]
             lb = [0.75*amp,0.1*f,-pi,0.01,-2*abs(offset)]
-            ub = [2*amp,2*f,pi,100,2*abs(offset)]
+            ub = [2*amp,2*f,pi,500,2*abs(offset)]
             fitFunction = ramsey
             # fitted_pars, covar = scy.optimize.curve_fit(fitFunction, x_vector, y_vector,p0=p0,method='trf',bounds=[lb,ub],xtol=1e-12,maxfev=20e3)
         elif fitFunc == 'envelope':
@@ -709,4 +729,6 @@ def gen_WK_sig(fs,nu,tauk,Tmax):
         pass
 
     return np.real(signal)/max(np.real(signal)),np.abs(psd[:round(N/2)]),freqs,autocorr[round(N/2)+1:]
+
+
 

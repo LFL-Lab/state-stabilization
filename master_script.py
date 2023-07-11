@@ -9,9 +9,10 @@ Created on Thu Apr 14 11:35:33 2022
 from qubit import qubit
 import numpy as np
 import plotting as pt
+from utilities import compute_bloch,compute_rho
 
 device_name = "WM1"
-project = 'state-stabilization'
+project = 'coherence-stabilization'
 qb_name = 'qb6'
 qb = qubit(qb_name)
 
@@ -31,7 +32,7 @@ qb.exp_pars = {
     'tomographic_axis':     'Z',
     }
 
-p_data,I,Q = qb.rr_spectroscopy(freqs)
+p_data,I,Q = qb.rr_spectroscopy(freqs,device_name)
 fc = pt.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,df=1e9*(freqs[1]-freqs[0]),find_pks=True)
 qb.update_qb_value('rr_LO',fc*1e9)
 
@@ -53,7 +54,7 @@ qb.exp_pars = {
     'fsAWG':                2.4e9,
     }
 
-p_data,I,Q = qb.qb_spectroscopy(freqs)
+p_data,I,Q = qb.qb_spectroscopy(freqs,device_name)
 pt.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,find_pks=True)
 
 ## Need to add title to this plot ^^
@@ -61,9 +62,10 @@ pt.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,exp_pars=qb.exp_pars,qb_pars=q
 
 #%% Time Rabi
 '''-----------------------------------------------------Time Rabi------------------------------------------------------'''
-detuning = -1.67e6
+detuning = 0
 
 qb.exp_pars = {
+    'initial-state':        '0',
     'exp':                  't-rabi',
     'n_avg':                128,
     'x0':                   13e-9,
@@ -113,7 +115,7 @@ qb.exp_pars = {
     'fsAWG':                2.4e9,
     }
 
-data = qb.single_shot()
+data = qb.single_shot(device_name,qb_name)
 
 #make 2D histogram
 pt.plot_single_shot(data, qb.exp_pars,qb.qb_pars,qb.iteration)
@@ -132,7 +134,7 @@ qb.exp_pars = {
 }
 
 
-t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 # plot data
 fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='T1',dx=t[-1]/nSteps,verbose=0)
 pt.plot_T1_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
@@ -144,8 +146,8 @@ qb.exp_pars = {
     'exp':                  'ramsey',
     'n_avg':                512,
     'x0':                   60e-9,
-    'xmax':                 120e-6,
-    'dx':                   1000e-9,
+    'xmax':                 5e-6,
+    'dx':                   50e-9,
     'fsAWG':                0.6e9,
     'amp_q':                0.1,
     'active_reset':         False,
@@ -158,7 +160,7 @@ t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check
 # fit & plot data
 fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='ramsey',dx=t[-1]/nSteps*1e6,verbose=0)
 pt.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
-qb.update_qb_value('qb_freq', qb.exp_pars['qubit_drive_freq']+fitted_pars[1]*1e6)
+qb.update_qb_value('qb_freq', qb.exp_pars['qubit_drive_freq']-fitted_pars[1]*1e6)
 
 #%% tomography Experiment
 
@@ -176,38 +178,66 @@ qb.exp_pars = {
     'tomographic-axis':     'Z',
 }
 
-t,data2,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
+t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
 
 # fit & plot data
 fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
 qb.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+
+#%% Coordinate System Calibration
+
+# initial_states = ['X','Y','1']
+
+qb.wfm_pars = {
+    'tb':       100e-6,
+    'amp':      0,
+    }
+
+qb.exp_pars = {
+    'exp':                  't-rabi',
+    'n_avg':                1024,
+    'x0':                   13e-9,
+    'xmax':                 0.4e-6,
+    'dx':                   6e-9,
+    'fsAWG':                2.4e9,
+    'amp_q':                0.4,
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
+}
+
+t,data_cal,nSteps = qb.tomography_calibration(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=False)
+# fit & plot data
+calib_pars = qb.cal_coord(data_cal)
+pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_pars)
+
 
 #%% State-stabilization Experiment
 
 initial_states = ['X']
 
 qb.wfm_pars = {
-    'tb':       10e-6,
-    'amp':      500e-3,
+    'tb':       100e-6,
+    'amp':      0.1,
     }
 
 qb.exp_pars = {
     'exp':                  'state-stabilization',
-    'n_avg':                128,
+    'n_avg':                512,
     'x0':                   100e-9,
-    'xmax':                 1e-6,
-    'dx':                   0.1e-6,
+    'xmax':                 3e-6,
+    'dx':                   50e-9,
     'fsAWG':                1.2e9,
     'amp_q':                0.1,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
 }
 
-t,data2,nSteps = qb.state_stabilization(initial_states,qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
-
+t,data,nSteps = qb.state_stabilization(initial_states,qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=False)
 # fit & plot data
-fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,verbose=0)
-qb.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+vb = compute_bloch(data[:,:,-1], calib_pars)
+rho = compute_rho(vb)
+# pt.tom_calib_plot(x_data=t, y_data=data, coords=calib_pars, mode='data')
+pt.plot_tomography(rho, cal_states=calib_pars)
 
 #%% Virtual Z-Gate Experiment
 
@@ -254,8 +284,8 @@ qb.min_leak(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],mixer='qubit',mode='coarse',plo
 qb.min_leak(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],mixer='rr',mode='coarse',plot=True)
 
 #f
-qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF']+detuning,mode='coarse',amp=0.2,threshold=-30)
-qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF']+detuning,mode='fine',amp=0.2,threshold=-60)
+qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF']+detuning,mode='coarse',amp=0.3,threshold=-30)
+qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF']+detuning,mode='fine',amp=0.3,threshold=-60)
 
 qb.suppr_image(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],f_IF=qb.qb_pars['rr_IF'],mode='coarse',amp=1)
 

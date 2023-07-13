@@ -252,7 +252,7 @@ def plot_ramsey_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},
     else:
         ax.plot(x_vector,ramsey(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2],fitted_pars[3],fitted_pars[4]),'r')
     ax.set_title(f'Ramsey Measurement {iteration:03d}')
-    textstr = f'$T_\pi$ = {qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$\Delta$ = {fitted_pars[1]:.2f} MHz\n$T_2^R$ = {fitted_pars[3]:.1f} $\mu$s\n$N$ = {exp_pars["n_avg"]}'
+    textstr = f'$T_\pi$ = {qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$\Delta$ = {fitted_pars[1]:.3f} MHz\n$T_2^R$ = {fitted_pars[3]:.1f} $\mu$s\n$N$ = {exp_pars["n_avg"]}'
 
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
 

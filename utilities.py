@@ -66,13 +66,14 @@ def Watt2dBm(x):
     '''
     return 10.*np.log10(x*1000.)
 
-def gen_arb_wfm(wfm_type,wfm_pars):
+def gen_arb_wfm(wfm_type,wfm_pars,channel='I'):
     
     time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
     
     if wfm_type == 'rising':
         fun = lambda x : (1/np.sqrt(wfm_pars['tb'] - x)) 
-        wfm = wfm_pars['amp']*fun(time_arr)
+        wfm_I = wfm_pars['amp']*fun(time_arr)
+        wfm_Q = wfm_pars['amp']*fun(time_arr)
         plt.plot(time_arr,wfm)
     elif wfm_type == 'markov':
         wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], wfm_pars['n_points'])

@@ -118,10 +118,14 @@ def time_rabi_sequence(tomography=False):
     var i;
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
-        for (i=0; i<n_steps; i++) {
+        for (i=0; i<n_steps+1; i++) {
+                if (i==0) {
+                        }
+                else {
                 executeTableEntry(n_steps+1);
-                executeTableEntry(i);
+                executeTableEntry(i-1);
                 executeTableEntry(n_steps+2);
+                }
                 _tomography_pulse_
                 _trigger_readout_
       }
@@ -284,10 +288,10 @@ def single_shot_sequence():
    
     wave w_marker = 2*marker(512,1);
     // Beginning of the core sequencer program executed on the HDAWG at run time
-    repeat(num_samples) {
+    repeat(512) {
         // OFF Measurement
         _trigger_readout_
-        playWave(1,2,w_pi_I,1,2,w_pi_Q,AWG_RATE_2400MHZ);
+        executeTableEntry(0);
         _trigger_readout_
         }'''
 
@@ -359,8 +363,10 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
     elif pulse_type == 'fall':
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
-    elif pulse_type == 'arb':
-        pulse = gen_arb_wfm('rising',wfm_pars)
+    elif pulse_type == 'arb_I':
+        pulse = gen_arb_wfm('rising',wfm_pars,channel='I')
+    elif pulse_type == 'arb_Q':
+        pulse = gen_arb_wfm('rising',wfm_pars,channel='Q')
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -662,7 +668,8 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
          N = qb_pars['pi_len']
          amp_half = qb_pars['pi_half_amp']
          pi_amp = qb_pars['pi_amp']
-
+         amp = wfm_pars['amp']
+         
          sequence.waveforms[0] = (
          Wave(*make_wave(pulse_type = 'pi',
                          wave_name = 'w_prep_I',
@@ -692,13 +699,13 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
          sequence.waveforms[1] = (
          Wave(*make_wave(pulse_type = 'arb',
                          wave_name = 'w_arb_I',
-                         amplitude = 0,
+                         amplitude = amp,
                          pulse_length = n_points,
                          wfm_pars = wfm_pars,
                          output_order = '12')), 
-         Wave(*make_wave(pulse_type = 'zero',
-                         wave_name = 'w_zero_Q',
-                         amplitude = 0,
+         Wave(*make_wave(pulse_type = 'arb',
+                         wave_name = 'w_arb_Q',
+                         amplitude = amp,
                          pulse_length = n_points,
                          output_order = '12'))
      )
@@ -708,7 +715,7 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
        
          
 
-    elif exp == 'single_shot' or exp_pars['active_reset'] ==  True:
+    elif exp == 'single-shot':
         N = qb_pars['pi_len']
         amp = qb_pars['pi_amp']
     #pi_pulse = qb_pars['pi_amp'] * gaussian (N,N/5)
@@ -761,8 +768,11 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
         sweep_var = 'amp'
     elif exp == 'z-gate':
         sweep_var = 'phase'
+    elif exp == 'single-shot':
+        sweep_var = None
     elif exp != 'spectroscopy':
         sweep_var='time'
+    
         
     ct = init_ct(hdawg_core)
     
@@ -775,11 +785,13 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
    
         
     if sweep_var == 'time':
-        ct_sweep_length(ct,wfm_index,qb_pars,x0,dx,n_steps)
+        ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,n_steps)
     elif sweep_var == 'amp':
         ct_sweep_amp(ct,wfm_index,exp_pars,qb_pars,n_steps)
     elif sweep_var == 'phase':
         ct_sweep_phase(ct,exp_pars,wfm_index,n_steps)
+    else:
+        pass
         
     if exp == 'state-stabilization':
         wfm_index = 0
@@ -796,10 +808,23 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
         ct = arb_pulse(ct,n_steps+2,wfm_index,1,base_theta,0)
     elif exp == 'T1':
         wfm_index = 0
-        ct = arb_pulse(ct,n_steps,wfm_index,qb_pars['pi_amp'],base_theta,0) # pi_pulse
+        ct = arb_pulse(ct,n_steps,wfm_index,1,base_theta,0) # pi_pulse
+    elif exp == 'single-shot':
+        wfm_index = 0
+        ct = arb_pulse(ct,0,wfm_index,1,base_theta,0) # pi_pulse
+    elif exp == 'ramsey':
+        wfm_index = 0
+        ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0) # pi_pulse
+        
     return ct
     
-def ct_sweep_length(ct,wfm_index,qb_pars,x0,dx,n_steps=100):
+def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,n_steps=100):
+    
+    if exp == 't-rabi':
+        stop = n_steps+1
+    else:
+        stop = n_steps
+        
     for i in range(n_steps):
         wfm_length = x0 + i * dx
         ct.table[i].waveform.index = wfm_index
@@ -834,13 +859,13 @@ def init_ct(hdawg_core):
     return ct
 
 def arb_pulse(ct,table_index,wfm_index,amp,base_theta,theta):
-    
+
     ct.table[table_index].waveform.index = wfm_index
     ct.table[table_index].waveform.samplingRateDivider = 0
     ct.table[table_index].amplitude0.value = amp
     ct.table[table_index].amplitude1.value = amp
     ct.table[table_index].phase0.value = theta
-    ct.table[table_index].phase1.value = base_theta +theta
+    ct.table[table_index].phase1.value = base_theta + theta
     
     return ct
 

@@ -22,8 +22,10 @@ from zhinst.toolkit.waveform import Wave, OutputType
 import utilities as utils #odd,even,roundToBase,gen_arb_wfm
 from scipy.signal.windows import gaussian
 from plotting import plot_mixer_opt
+from scipy.optimize import minimize
 import re
 import scipy.optimize as opt
+from plotting import power_plot
 
 pi=np.pi        
 
@@ -192,15 +194,17 @@ class qubit():
         print('-------------Setting HDAWG sequence-------------')
         self.awg.setInt('/dev8233/awgs/0/time',0) # sets AWG sampling rate to 2.4 GHz
         self.sequence = Sequence()
-        self.sequence.code = seqs.gen_seq_code(self.exp_pars['exp'],'Z')
-        self.sequence.constants['qubit_reset_time'] = utils.roundToBase(self.qb_pars['qubit_reset_time']*1.17e6)
-        self.sequence.constants['num_samples'] = self.exp_pars['num_samples']
+        # self.sequence.code = seqs.gen_seq_code(self.exp_pars['exp'],'Z')
+        # self.sequence.constants['qubit_reset_time'] = utils.roundToBase(self.qb_pars['qubit_reset_time']*1.17e6)
+        # self.sequence.constants['num_samples'] = self.exp_pars['num_samples']
         N = self.qb_pars['pi_len']
         pi_pulse = self.qb_pars['pi_amp']*gaussian(N,N/5)
-        self.sequence.waveforms = Waveforms()
-        self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
-            Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
-        self.upload_to_awg(ct={})
+        self.exp_pars['tomographic-axis'] = 'Z'
+        # self.sequence.waveforms = Waveforms()
+        # self.sequence.waveforms[1] = (Wave(pi_pulse, name="w_pi_I", output=OutputType.OUT1|OutputType.OUT2),
+        #     Wave(np.zeros(N), name="w_pi_Q", output=OutputType.OUT1|OutputType.OUT2))
+        # self.upload_to_awg(ct={})
+        self.setup_awg()
         
 
     def ssb_setup(self,qb_IF=50e6):
@@ -222,6 +226,7 @@ class qubit():
         '''
         result_length=2*self.exp_pars['num_samples']
         self.n_steps = result_length
+        theta = self.exp_pars['theta']*pi/180
         
         readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
         
@@ -257,6 +262,8 @@ class qubit():
 
         self.stop_result_unit(paths) #unsubscribe from QA
 
+        data_OFF = data_OFF*np.exp(-1j*theta)
+        data_pi = data_pi*np.exp(-1j*theta)
         # organize data into dictionary so they can be loaded into a dataframe
         data = dict()
         data['I'] = np.real(data_OFF)
@@ -527,7 +534,7 @@ class qubit():
             x_array = x_array/self.exp_pars['fsAWG']
             
         norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-        data = sweep_data[paths[0]][0:self.n_steps]/norm # normalizes the data according to the integration length
+        data = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
         
         if source == 2 or source == 1:
             results = data
@@ -601,7 +608,7 @@ class qubit():
         else:
             timeout = 1.2*exp_dur
 
-        data = np.zeros((3,self.n_steps))
+        data = np.zeros((3,self.n_steps+1))
         self.exp_pars['initial-state'] = '0'
         
         for i,st in enumerate(['X','Y','Z']):
@@ -621,7 +628,7 @@ class qubit():
             # reset QA result unit and stop AWGs
             self.stop_result_unit(paths)
             norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-            data[i,:] = sweep_data[paths[0]][0:self.n_steps]/norm # normalizes the data according to the integration length
+            data[i,:] = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
             # self.qa_result_reset()
             # self.enable_awg(self.qa,enable=0) # start the readout sequence
                 
@@ -947,6 +954,8 @@ class qubit():
         # configure triggering (0=trigger input 1 7 for internal trigger)
 
         # QA Result Settings
+        if self.exp_pars['exp'] == 't-rabi':
+            result_length += 1
         self.qa.setInt('/dev2528/qas/0/result/length', result_length)
         
         self.qa.setInt('/dev2528/qas/0/result/source', source) # 2 -> source = rotation | 7 = integration
@@ -1328,48 +1337,48 @@ class qubit():
         return a*x+b
         
     #%% mixer_opt_funcs
-    def get_power(self,fc=4e9,span=0.5e6,threshold=-50,config=False,plot=False,output=False):
-        """
-        Measures the power at a specific frequency using the spectrum analyzer. Can calculate the ON/OFF ratio if desired.
+    # def get_power(self,fc=4e9,span=0.5e6,threshold=-50,config=False,plot=False,output=False):
+    #     """
+    #     Measures the power at a specific frequency using the spectrum analyzer. Can calculate the ON/OFF ratio if desired.
 
-        Args:
-            sa (class): The API class instance corresponding to the spectrum analyzer.
-            inst (class): The API class instance corresponding to the HDAWG or UHFQA.
-            fc (double): The frequency at which we want to measure the power.
-            threshold (int, optional): The reference level for the SA. Defaults to -50.
-            plot (boolean, optional): To plot or not the data. Defaults to False.
+    #     Args:
+    #         sa (class): The API class instance corresponding to the spectrum analyzer.
+    #         inst (class): The API class instance corresponding to the HDAWG or UHFQA.
+    #         fc (double): The frequency at which we want to measure the power.
+    #         threshold (int, optional): The reference level for the SA. Defaults to -50.
+    #         plot (boolean, optional): To plot or not the data. Defaults to False.
 
-        Returns:
-            OFF_power (double): The power (leakage) at the frequency specified by fc.
+    #     Returns:
+    #         OFF_power (double): The power (leakage) at the frequency specified by fc.
 
-        """
+    #     """
         
-        # configure SA
-        if config:
-            self.sa.setValue('Span',span)
-            self.sa.setValue('Center frequency', fc)
-            self.sa.setValue('Threshold',threshold)
+    #     # configure SA
+    #     if config:
+    #         self.sa.setValue('Span',span)
+    #         self.sa.setValue('Center frequency', fc)
+    #         self.sa.setValue('Threshold',threshold)
             
-        # signal = sa_get_sweep_64f(self.sa)['max']
-        signal = self.sa.getValue('Signal')['y']
-        power = np.max(signal)
+    #     # signal = sa_get_sweep_64f(self.sa)['max']
+    #     signal = self.sa.getValue('Signal')['y']
+    #     power = np.max(signal)
         
        
-        if plot:
-            freqs = np.linspace(fc-span/2,fc+span/2,num=len(signal))
-            self.power_plot(freqs, signal, power, fc=fc)
-            if output:
-                print(f'{power} dBm at {fc/1e9} GHz')
-        return power
+    #     if plot:
+    #         freqs = np.linspace(fc-span/2,fc+span/2,num=len(signal))
+    #         power_plot(freqs, signal, power, fc=fc)
+    #         if output:
+    #             print(f'{power} dBm at {fc/1e9} GHz')
+    #     return power
     
-    # def meas_on_power(self,inst='awg',amp=0.1):
-    #     if meas_on_power:
-    #         if inst == 'awg':
-    #             self.setup_mixer_calib('awg',amp)
-    #         elif inst == 'qa':
-    #             self.setup_mixer_calib('qa',amp)
+    # # def meas_on_power(self,inst='awg',amp=0.1):
+    # #     if meas_on_power:
+    # #         if inst == 'awg':
+    # #             self.setup_mixer_calib('awg',amp)
+    # #         elif inst == 'qa':
+    # #             self.setup_mixer_calib('qa',amp)
                 
-        self.get_power(fc=self.qb_pars['qb_LO']+self.qb_pars['qb_IF'],threshold=0,config=True)
+    #     self.get_power(fc=self.qb_pars['qb_LO']+self.qb_pars['qb_IF'],threshold=0,config=True)
         
     def config_sa(self,fc,span=0.5e6,threshold=-30):
             """
@@ -1390,10 +1399,51 @@ class qubit():
             """
 
             self.sa.setValue('Span',span)
+            self.sa.setValue('Center frequency',fc)
+            self.sa.setValue('Threshold',threshold)
+            self.sa.setValue('Bandwidth',100)
+            
+    def get_power(self,params,inst,f_LO,f_IF=50e6,device={},cal='lo',span=0.5e6,config=False,output=False,plot=False,threshold=-50):
+        """
+​
+        DESCRIPTION:
+        function to be optimized for minimizing LO leakage
+​
+        INPUTS:
+        --------- 
+        inst (class):
+        params (float, array): voltages used for voltage offsets
+        
+        
+        OUTPUTS:
+        
+        """
+        if cal == 'lo':
+            f_IF = 0
+            inst.set(f'/{device}/sigouts/0/offset', params[0])
+            inst.set(f'/{device}/sigouts/1/offset', params[1])
+        elif cal == 'ssb':
+            self.IQ_imbalance(params[0], params[1])
+        inst.sync()
+        fc = f_LO - f_IF
+        
+        if config:
+            self.sa.setValue('Span',span)
             self.sa.setValue('Center frequency', fc)
             self.sa.setValue('Threshold',threshold)
-
-    def min_leak(self,inst,f_LO=1e9,mode='fine',mixer='qubit',threshold=-50,measON=False,plot=False):
+            
+        signal = self.sa.getValue('Signal')['y']
+        power = np.max(signal)
+        
+        if plot:
+            freqs = np.linspace(fc-span/2,fc+span/2,num=len(signal))
+            power_plot(freqs, signal, power, fc=fc)
+            if output:
+                print(f'{power:.1f} dBm at {fc/1e9:.4f} GHz')
+                
+        return power
+         
+    def min_leak(self,inst,f_LO=1e9,f_IF = 0,mixer='qubit',threshold=-50,span=0.5e6,cal='lo',amp=0.2,measON=False,plot=False):
         """
 
         DESCRIPTION:
@@ -1418,70 +1468,70 @@ class qubit():
             device = 'dev2528'
             atten = self.qb_pars['rr_atten']
         
-        start = time.time()
-        if mode == 'coarse':
-            span = 30.1e-3
-            dV = 3e-3
-        elif mode == 'fine':
-            span = 5e-3
-            dV = 0.5e-3
-
-        # generate arrays for optimization parameters
-        vStart = np.zeros(2)
-        for i in range(len(vStart)):
-            vStart[i] = inst.get(f'/{device}/sigouts/{i}/offset')[f'{device}']['sigouts'][f'{i}']['offset']['value']
+        f = f_LO - f_IF
+        if cal == 'ssb':
+            # get current values of phase and amplitude
+            par1 = self.qb_pars['qb_mixer_imbalance'][0]
+            par2 = self.qb_pars['qb_mixer_imbalance'][1]
+            # upload and run AWG sequence program
+            self.setup_mixer_calib(inst,amp=amp)
+            # self.update_qb_value('qb_LO', f_LO)
+            self.awg.set('/dev8233/oscs/0/freq',f_IF)
+            self.enable_awg(inst,enable=1)
+            bounds = [(-0.6,0.6),(-5,5)]
+        elif cal =='lo':
+            # generate arrays for optimization parameters
+            par1 = self.qb_pars['qb_mixer_offsets'][0]
+            par2 = self.qb_pars['qb_mixer_offsets'][1]
             inst.sync()
-        VoltRange1 = np.arange(vStart[0]-span/2,vStart[0]+span/2,dV)
-        VoltRange2 = np.arange(vStart[1]-span/2,vStart[1]+span/2,dV)
-
-        # vStart[i] = inst.get(f'/{device}/sigouts/{channels[i]}/offset')[f'{device}']['sigouts'][f'{channels[i]}']['offset']['value']
-        inst.sync()
-
-        VoltRange1 = np.arange(vStart[0]-span/2,vStart[0]+span/2,dV)
-        VoltRange2 = np.arange(vStart[1]-span/2,vStart[1]+span/2,dV)
-
-        L1 = len(VoltRange1)
-        L2 = len(VoltRange2)
-        power_data = np.zeros((L1,L2))
-        
+            bounds = [(-30e-3,30e-2),(-30e-3,30e-3)]
+            
+        x0 = [par1,par2]
         if mixer == 'rr':
             instfuncs.set_attenuator(0)
         else:
             pass
-            
-        self.config_sa(fc=f_LO,threshold=threshold)
+        leakage = self.get_power([par1,par2], inst, f_LO, f_IF,device,cal,span=span,config=True,output=True,plot=True,threshold=-10)
+        if leakage > threshold:
+            self.config_sa(fc=f,threshold=threshold+30,span=span)
             
         # Sweep individual channel voltages and find leakage
-        with tqdm(total = L1*L2) as progress_bar:
-            for i,V1 in enumerate((VoltRange1)):
-                for j,V2 in enumerate((VoltRange2)):
-                    inst.set(f'/{device}/sigouts/0/offset',V1)
-                    inst.set(f'/{device}/sigouts/1/offset',V2)
-                    inst.sync()
-                    power_data[i,j] = self.get_power(fc=f_LO,plot=False,config=False)
-                    progress_bar.update(1)
-
+        # with tqdm(total = L1*L2) as progress_bar:
+        #     for i,V1 in enumerate((VoltRange1)):
+        #         for j,V2 in enumerate((VoltRange2)):
+        #             inst.set(f'/{device}/sigouts/0/offset',V1)
+        #             inst.set(f'/{device}/sigouts/1/offset',V2)
+        #             inst.sync()
+        #             power_data[i,j] = self.get_power(fc=f_LO,plot=False,config=False)
+        #             progress_bar.update(1)
+        start = time.time()
+        result = minimize(self.get_power,x0 = x0, args = (inst, f_LO, f_IF, device,cal,span),bounds = bounds,method='Nelder-Mead',options={'maxfev':50})
         # find index of voltage corresponding to minimum LO leakage
-        argmin = np.unravel_index(np.argmin(power_data), power_data.shape)
+        # argmin = np.unravel_index(np.argmin(power_data), power_data.shape)
 
-        opt_I = VoltRange1[argmin[0]]
-        opt_Q = VoltRange2[argmin[1]]
+        # opt_I = VoltRange1[argmin[0]]
+        # opt_Q = VoltRange2[argmin[1]]
+        opt_par1 , opt_par2  = result.x
         # set voltages to optimal values
-        inst.set(f'/{device}/sigouts/0/offset',opt_I)
-        inst.set(f'/{device}/sigouts/1/offset',opt_Q)
         if inst == self.awg:
-            self.update_qb_value('qb_mixer_offsets', [opt_I,opt_Q])
+            if cal == 'lo':
+                self.update_qb_value('qb_mixer_offsets', [opt_par1,opt_par2])
+            elif cal == 'ssb':
+                self.update_qb_value('qb_mixer_imbalance', [opt_par1,opt_par2]) 
+                
         elif inst == self.qa:
-            self.update_qb_value('rr_mixer_offsets', [opt_I,opt_Q])
+            self.update_qb_value('rr_mixer_offsets', [opt_par1,opt_par2])
         inst.sync()
-        print(f'optimal I_offset = {round(opt_I*1e3,1)} mV, optimal Q_offset = {round(1e3*opt_Q,1)} mV')
-
+        if cal == 'lo':
+            print(f'optimal I_offset = {round(opt_par1*1e3,1)} mV, optimal Q_offset = {round(1e3*opt_par2,1)} mV')
+        elif cal == 'ssb':
+            print(f'g = {round(opt_par1*1e2,1)}, phi = {round(opt_par2,3)}')
+        
         end = time.time()
         print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
-
         # get LO leakage for optimal DC values
-        OFF_power = self.get_power(fc=f_LO,threshold=threshold,plot=False)
-
+        OFF_power = self.get_power([opt_par1,opt_par2], inst, f_LO, f_IF,device,cal,span=span,config=True,output=True,plot=True,threshold=threshold)
+        self.enable_awg(inst,enable=0)
         # if measON:
         #     offset = inst.get(f'/{device}/sigouts/0/offset')[f'{device}']['sigouts'][0]['offset']['value'][0]
         #     #get ON power
@@ -1493,103 +1543,9 @@ class qubit():
         # else:
         #     pass
 
-        if plot:
-            plot_mixer_opt(VoltRange1, VoltRange2, power_data,cal='LO',mixer=mixer,fc=f_LO)
-        
         if mixer == 'rr':
             instfuncs.set_attenuator(self.qb_pars['rr_atten'])
         
-    def suppr_image(self,inst,mode='fine',mixer='qubit',threshold=-50,f_LO=3.875e9,f_IF=50e6,amp=0.2,
-                    sb='lsb',plot=True):
-            """
-
-            DESCRIPTION:
-                Minimizes power at sideband at given frequency. The default sideband we want to minimize is the lower sideband for now.
-                In later versions we can add the ability to choose which sideband to optimize.
-
-            INPUTS:
-                sa (class): API class instance of spectrum analyzer.
-                inst (class): The class instance of the instrument (HDAWG or UHFQA) that controls the I and Q channels of the mixer we want to optimize.
-                mode(string): Coarse or fine tuning. In "coarse" tuning mode the parameter steps are large.
-                mixer (string): The mixer we want to optimize. Options are "qubit","resonator",and "stark". Defaults to 'qubit'.
-                f_LO (float): The local oscillator (LO) frequency of the mixer. Defaults to 3.875e9.
-                f_IF (float): The intermediate (IF) frequency of the mixer. Defaults to 50e6.
-                channels (list): The AWG channel connected to the I port of the mixer you want to optimize.
-                sb (str): Which sideband is the image. Default is the lower sideband ('lsb')
-                gen (int): The oscillator used for modulation.
-                plot (boolean): Whether or not to plot the image power as a function the parameters.
-            """
-
-            if inst == self.awg:
-                device = 'dev8233'
-            elif inst == self.qa:
-                device = 'dev2528'
-                atten = self.qb_pars['rr_atten']
-                
-            if sb == 'lsb':
-                f_im = f_LO - f_IF
-            elif sb == 'usb':
-                f_im = f_LO + f_IF
-
-            start = time.time()
-            if mode == 'coarse':
-                span_amp= 10.001e-2
-                da = 20e-3
-                span_phi = 3.1
-                dp = 0.3
-            elif mode == 'fine':
-                span_amp = 2.001e-3
-                da = 2e-4
-                span_phi = 0.501
-                dp = 0.1
-
-            # get current values of phase and amplitude
-            a0 = self.qb_pars['qb_mixer_imbalance'][0]
-            p0 = self.qb_pars['qb_mixer_imbalance'][1]
-            # generate arrays for optimization parameters based on current values of phi and a used
-            phiArr = np.arange(p0-span_phi/2,p0+span_phi/2,dp)
-            ampArr = np.arange(a0-span_amp/2,a0+span_amp/2,da)
-
-    
-            # upload and run AWG sequence program
-            self.setup_mixer_calib(inst,amp=amp)
-            # self.update_qb_value('qb_LO', f_LO)
-            self.awg.set('/dev8233/oscs/0/freq',f_IF)
-            self.enable_awg(inst,enable=1)
-            
-            
-            L1 = len(ampArr)
-            L2 = len(phiArr)
-            power_data = np.zeros((L1,L2))
-
-            self.config_sa(fc=f_im,threshold=threshold)
-
-            # Sweep individual channel voltages and find leakage
-            with tqdm(total = L1*L2) as progress_bar:
-                for i,g in enumerate((ampArr)):
-                    for j,phi in enumerate((phiArr)):
-                        self.IQ_imbalance(g, phi)
-                        inst.sync()
-                        power_data[i,j] = self.get_power(fc=f_im,threshold=threshold)
-                        progress_bar.update(1)
-            
-            self.enable_awg(inst,enable=0)
-            # find index of voltage corresponding to minimum LO leakage
-            argmin = np.unravel_index(np.argmin(power_data), power_data.shape)
-            
-            opt_amp = ampArr[argmin[0]]
-            opt_phi = phiArr[argmin[1]]
-            # set voltages to optimal values
-            self.IQ_imbalance(g=opt_amp, phi=opt_phi)
-            self.update_qb_value('qb_mixer_imbalance', [opt_amp,opt_phi])
-            inst.sync()
-            print(f'g = {round(opt_amp*1e2,1)}, phi = {round(opt_phi,3)}')
-
-            end = time.time()
-            print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
-
-            if plot:
-                plot_mixer_opt(ampArr*1e2,phiArr,  power_data,cal='SB',mixer='qubit',fc=f_im)
 
     #%% optimize readout functions
     # def optimize_atten(self,x0,xmax)
@@ -1606,114 +1562,6 @@ class qubit():
     #     inst.set(f'/{device}/sigouts/1/offset',V2)
     #     inst.sync() 
     #     return self.get_power(fc=f_LO,plot=False,config=False)
-    
-    def dev_min_leak(self,inst,f_LO=1e9,mode='fine',mixer='qubit',threshold=-50,measON=False,plot=False):
-        """
-
-        DESCRIPTION:
-            Optimizes mixer at given frequency
-
-        INPUTS:
-            sa (class): API class instance of spectrum analyzer.
-            inst (class): The class instance of the instrument (HDAWG or UHFQA) that controls the I and Q channels of the mixer we want to optimize.
-            mode(string): Coarse or fine tuning. In "coarse" tuning mode the parameter steps are large.
-            mixer (string): The mixer we want to optimize. Options are "qubit","resonator",and "stark". Defaults to 'qubit'.
-            f_LO (float): The local oscillator (LO) frequency of the mixer. Defaults to 3.875e9.
-            f_IF (float): The intermediate (IF) frequency of the mixer. Defaults to 50e6.
-            amp (float): Amplitude of ON Pulse.
-            channels (list): The AWG channel used for I/Q in the experimental setup.
-            measON (boolean): Whether or not to measure the ON power of the mixer.
-            plot (boolean): Whether or not to plot the leakage as a function the parameters.
-        """
-        
-        if inst == self.awg:
-            device = 'dev8233'
-        elif inst == self.qa:
-            device = 'dev2528'
-            atten = self.qb_pars['rr_atten']
-        
-        start = time.time()
-        if mode == 'coarse':
-            span = 30.1e-3
-            dV = 3e-3
-        elif mode == 'fine':
-            span = 5e-3
-            dV = 0.5e-3
-
-        # generate arrays for optimization parameters
-        vStart = np.zeros(2)
-        for i in range(len(vStart)):
-            vStart[i] = inst.get(f'/{device}/sigouts/{i}/offset')[f'{device}']['sigouts'][f'{i}']['offset']['value']
-            inst.sync()
-        VoltRange1 = np.arange(vStart[0]-span/2,vStart[0]+span/2,dV)
-        VoltRange2 = np.arange(vStart[1]-span/2,vStart[1]+span/2,dV)
-
-        # vStart[i] = inst.get(f'/{device}/sigouts/{channels[i]}/offset')[f'{device}']['sigouts'][f'{channels[i]}']['offset']['value']
-        inst.sync()
-
-        VoltRange1 = np.arange(vStart[0]-span/2,vStart[0]+span/2,dV)
-        VoltRange2 = np.arange(vStart[1]-span/2,vStart[1]+span/2,dV)
-
-        L1 = len(VoltRange1)
-        L2 = len(VoltRange2)
-        power_data = np.zeros((L1,L2))
-        
-        if mixer == 'rr':
-            self.update_qb_value('rr_atten', 0)
-        else:
-            pass
-            
-        self.config_sa(fc=f_LO,threshold=threshold)
-        
-        # opt.minimize(self.dev_mixer_setup,x0 =(0,0), args = (inst=inst)) 
-            
-        # # Sweep individual channel voltages and find leakage
-        with tqdm(total = L1*L2) as progress_bar:
-            for i,V1 in enumerate((VoltRange1)):
-                for j,V2 in enumerate((VoltRange2)):
-                    inst.set(f'/{device}/sigouts/0/offset',V1)
-                    inst.set(f'/{device}/sigouts/1/offset',V2)
-                    inst.sync()
-                    power_data[i,j] = self.get_power(fc=f_LO,plot=False,config=False)
-                    progress_bar.update(1)
-
-        # find index of voltage corresponding to minimum LO leakage
-        argmin = np.unravel_index(np.argmin(power_data), power_data.shape)
-
-        opt_I = VoltRange1[argmin[0]]
-        opt_Q = VoltRange2[argmin[1]]
-        # set voltages to optimal values
-        inst.set(f'/{device}/sigouts/0/offset',opt_I)
-        inst.set(f'/{device}/sigouts/1/offset',opt_Q)
-        if inst == self.awg:
-            self.update_qb_value('qb_mixer_offsets', [opt_I,opt_Q])
-        elif inst == self.qa:
-            self.update_qb_value('rr_mixer_offsets', [opt_I,opt_Q])
-        inst.sync()
-        print(f'optimal I_offset = {round(opt_I*1e3,1)} mV, optimal Q_offset = {round(1e3*opt_Q,1)} mV')
-
-        end = time.time()
-        print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
-
-        # get LO leakage for optimal DC values
-        OFF_power = self.get_power(fc=f_LO,threshold=threshold,plot=False)
-
-        # if measON:
-        #     offset = inst.get(f'/{device}/sigouts/0/offset')[f'{device}']['sigouts'][0]['offset']['value'][0]
-        #     #get ON power
-        #     inst.set(f'/{device}/sigouts/0/offset', amp)
-        #     inst.sync()
-        #     ON_power = self.get_power(fc=f_LO,threshold=0)
-        #     inst.set(f'/{device}/sigouts/0/offset', offset)
-        #     inst.sync()
-        # else:
-        #     pass
-
-        if plot:
-            plot_mixer_opt(VoltRange1, VoltRange2, power_data,cal='LO',mixer=mixer,fc=f_LO)
-        
-        if mixer == 'rr':
-            self.update_qb_value('rr_atten', atten)
     
     #%% utilities
     def inst_init(self):
@@ -1749,7 +1597,7 @@ class qubit():
         
         px = data[1,0]
         py = data[1,0]
-        exc = np.average(data[2,:])
+        exc = data[2,0]
         
         amp = abs(max(data[0,:])-min(data[0,:]))
         
@@ -1783,7 +1631,7 @@ class qubit():
             # upload waveforms
             self.hdawg_core.awgs[0].write_to_waveform_memory(self.sequence.waveforms)
             # upload command table if applicable
-            if self.exp_pars['exp'] != 'spectroscopy' and self.exp_pars['exp'] != 'single-shot':
+            if self.exp_pars['exp'] != 'spectroscopy':
                 self.hdawg_core.awgs[0].commandtable.upload_to_device(ct)
             
         self.awg.sync()
@@ -1801,6 +1649,8 @@ class qubit():
             elif self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
                 value = ct.table[i].waveform.length
                 x_array.append(int(value))
+                if i == self.n_steps-1:
+                    x_array.insert(0, 0)
                 
         return np.array(x_array)
             
@@ -1889,7 +1739,7 @@ class qubit():
     #         raise Exception("Upload to the instrument failed.")
 
 
-    def IQ_imbalance(self,g,phi,amp=0.9):
+    def IQ_imbalance(self,g,phi,amp=0.95):
         """
         Applies amplitude and phase correction to the AWG
 

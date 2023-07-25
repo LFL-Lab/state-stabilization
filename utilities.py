@@ -66,17 +66,28 @@ def Watt2dBm(x):
     '''
     return 10.*np.log10(x*1000.)
 
-def gen_arb_wfm(wfm_type,wfm_pars,channel='I'):
+def gen_arb_wfm(wfm_type,wfm_pars,channel='I',normalize=False,n_points=1024):
     
-    time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
     
     if wfm_type == 'rising':
-        fun = lambda x : (1/np.sqrt(wfm_pars['tb'] - x)) 
-        wfm_I = wfm_pars['amp']*fun(time_arr)
-        wfm_Q = wfm_pars['amp']*fun(time_arr)
+        time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
+        # gamma = wfm_pars['gamma']
+        # fun = lambda x : (1/2*np.sqrt(gamma/(1/gamma - 4*x))) 
+        fun = lambda x : (1/np.sqrt(wfm_pars['tb']-x)) 
+        wfm = fun(time_arr)
+        # wfm = []
+        # for i in range(len(time_arr)):
+        #     wfm.append(wfm_pars['slope']*time_arr[i])
+        #     if wfm[i] > 0.6:
+        #         wfm[i] = 0.6
+        # wfm = np.array(wfm)
+        if normalize:
+            wfm = wfm/(2*max(wfm))
+        # wfm_Q = wfm_pars['amp']*fun(time_arr)
+        print('test')
         plt.plot(time_arr,wfm)
     elif wfm_type == 'markov':
-        wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], wfm_pars['n_points'])
+        wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], n_points)
     elif wfm_type == 'telegraph':
         wfm = np.cos(2*np.pi*wfm_pars['nu']*1e3*time_arr + 2*np.pi*np.random.rand()) * gen_tel_noise(len(time_arr), wfm_pars['tau'], dt = wfm_pars['tmax']/len(time_arr))
 
@@ -113,8 +124,8 @@ def calc_steps(pars,verbose=True):
     """
     t0 = roundToBase(pars['fsAWG']*pars['x0'])
     dt = roundToBase(pars['fsAWG']*pars['dx'])
-    n_points = roundToBase(pars['xmax']*pars['fsAWG']) # this ensures there is an integer number of time points
-    n_steps = int((n_points-t0)/dt)+1 # 1 is added to include the first point
+    n_points = roundToBase((pars['xmax']-pars['x0'])*pars['fsAWG']) # this ensures there is an integer number of time points
+    n_steps = int(n_points/dt) # 1 is added to include the first point
     tmax = dt*n_steps
    
     if verbose:
@@ -138,12 +149,12 @@ def generate_xarray(pars):
     return x0,xmax,dx,x_array,n_steps
 
 def compute_bloch(data,calib_pars):
-    v_b = np.zeros((1,3))
+    v_b = []
     
-    for i in range(len(v_b)):
-        v_b[i] = 1-2*(data[i]-calib_pars[i])/calib_pars[3]
+    for i in range(3):
+        v_b.append(1-2*(data[i]-calib_pars[i])/calib_pars[3])
         
-    return v_b
+    return np.array(v_b)
 
 def compute_rho(vb):
     
@@ -151,9 +162,38 @@ def compute_rho(vb):
     sx = [[0,1],[1,0]]
     sy = [[0,-1j],[1j,0]]
     sz = [[1,0],[0,-1]]
-    rho = 1/2*(iden+np.multiply(vb[0][0],sx)+np.multiply(vb[0][1],sy)+np.multiply(vb[0][2],sz))
+    rho = 1/2*(iden+np.multiply(vb[0],sx)+np.multiply(vb[1],sy)+np.multiply(vb[2],sz))
     
     return rho
+
+def compute_coherence(data,calib_states,plane='ZX'):
+    
+    v1 = []
+    v2 = []
+    coherence = []
+    
+    for i in range(data.shape[1]):
+        # print(np.array(calib_states)*1e3)
+        vb = compute_bloch(data[:,i], calib_states)
+        if plane == 'XY':
+            v1.append(vb[0])
+            v2.append(vb[1])
+        elif plane == 'ZX':
+            v1.append(vb[2])
+            v2.append(vb[0])
+        coherence.append(v1[i]**2+v2[i]**2)
+    
+    return np.array(coherence)
+
+def compute_purity(data,calib_states):
+    
+    purr = []
+    
+    for i in range(data.shape[1]):
+        vb = compute_bloch(data[:,i], calib_states)[0]
+        purr.append(1/2*(1+np.linalg.norm(vb)**2))
+        
+    return np.array(purr)
 
 def normalize_data(data):
     

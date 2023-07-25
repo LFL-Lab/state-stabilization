@@ -11,6 +11,7 @@ from scipy.signal.windows import gaussian
 from zhinst.toolkit.waveform import Wave, OutputType
 from zhinst.toolkit import CommandTable,Sequence,Waveforms
 from utilities import roundToBase,gen_arb_wfm
+import matplotlib.pyplot as plt
 
 
 #%% sequence_code_funcs
@@ -30,7 +31,7 @@ def gen_seq_code(exp,axis):
         code = echo_sequence()
     elif exp == 'tomography':
         code = tomography_sequence()
-    elif exp == 'state-stabilization':
+    elif exp == 'coherence-stabilization':
         code = state_stabilization_sequence()
     elif exp == 'z-gate':
         code = z_gate_sequence()
@@ -351,7 +352,6 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
     '''
     
     # (╯°□°）╯︵ ┻━┻ 
-
     # generate pulse type
     if pulse_type == 'zero':
         pulse = np.zeros(pulse_length)
@@ -364,9 +364,9 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
     elif pulse_type == 'arb_I':
-        pulse = gen_arb_wfm('rising',wfm_pars,channel='I')
+        pulse = amplitude*gen_arb_wfm('rising',wfm_pars,channel='I',normalize=True)
     elif pulse_type == 'arb_Q':
-        pulse = gen_arb_wfm('rising',wfm_pars,channel='Q')
+        pulse = amplitude*gen_arb_wfm('markov',wfm_pars,channel='Q',n_points=pulse_length)
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -502,11 +502,13 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_zero_I',
                         amplitude = 0,
                         pulse_length =n_points,
+                        wfm_pars=wfm_pars,
                         output_order = '12')), 
-            Wave(*make_wave(pulse_type = 'zero',
+            Wave(*make_wave(pulse_type = 'arb_Q',
                         wave_name = 'w_zero_Q',
-                        amplitude = 0,
+                        amplitude = 1,
                         pulse_length = n_points,
+                        wfm_pars=wfm_pars,
                         output_order = '12'))
     ) 
 
@@ -664,16 +666,16 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         output_order = '12'))
         ) 
         
-    elif exp == 'state-stabilization':
+    elif exp == 'coherence-stabilization':
          N = qb_pars['pi_len']
          amp_half = qb_pars['pi_half_amp']
          pi_amp = qb_pars['pi_amp']
-         amp = wfm_pars['amp']
+         # amp = wfm_pars['amp']
          
          sequence.waveforms[0] = (
          Wave(*make_wave(pulse_type = 'pi',
                          wave_name = 'w_prep_I',
-                         amplitude = pi_amp,
+                         amplitude = 1,
                          pulse_length = N,
                          output_order = '12')), 
          Wave(*make_wave(pulse_type = 'zero',
@@ -697,16 +699,17 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
         # )  
 
          sequence.waveforms[1] = (
-         Wave(*make_wave(pulse_type = 'arb',
+         Wave(*make_wave(pulse_type = 'arb_I',
                          wave_name = 'w_arb_I',
-                         amplitude = amp,
+                         amplitude = 1,
                          pulse_length = n_points,
                          wfm_pars = wfm_pars,
                          output_order = '12')), 
-         Wave(*make_wave(pulse_type = 'arb',
+         Wave(*make_wave(pulse_type = 'arb_Q',
                          wave_name = 'w_arb_Q',
-                         amplitude = amp,
+                         amplitude = 1,
                          pulse_length = n_points,
+                         wfm_pars=wfm_pars,
                          output_order = '12'))
      )
 
@@ -759,7 +762,7 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
 
 #%% command_table_funcs
 # Please refer to https://docs.zhinst.com/hdawg/commandtable/v2/schema for other settings
-def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
+def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100):
    
     exp = exp_pars['exp']
     base_theta = 90 + qb_pars['qb_mixer_imbalance'][1] 
@@ -768,12 +771,11 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
         sweep_var = 'amp'
     elif exp == 'z-gate':
         sweep_var = 'phase'
-    elif exp == 'single-shot':
+    elif exp == 'single-shot' or exp == 'coherence-stabilization':
         sweep_var = None
     elif exp != 'spectroscopy':
         sweep_var='time'
     
-        
     ct = init_ct(hdawg_core)
     
     if exp == 't-rabi' or exp == 'echo':
@@ -782,10 +784,9 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
         wfm_index = 0
     else:
         wfm_index = 1
-   
         
     if sweep_var == 'time':
-        ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,n_steps)
+        ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,0,n_steps)
     elif sweep_var == 'amp':
         ct_sweep_amp(ct,wfm_index,exp_pars,qb_pars,n_steps)
     elif sweep_var == 'phase':
@@ -793,11 +794,13 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
     else:
         pass
         
-    if exp == 'state-stabilization':
+    if exp == 'coherence-stabilization':
         wfm_index = 0
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,0,n_steps)
         ct = arb_pulse(ct,n_steps,wfm_index,amp_prep,base_theta,theta_prep) # preparation pulse
         ct = arb_pulse(ct,n_steps+1,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
+        
     elif exp == 't-rabi':
         wfm_index = 3
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
@@ -818,19 +821,20 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},x0=0,dx=16,n_steps=100):
         
     return ct
     
-def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,n_steps=100):
+def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
     
     if exp == 't-rabi':
         stop = n_steps+1
     else:
         stop = n_steps
-        
+    
     for i in range(n_steps):
         wfm_length = x0 + i * dx
+        # print(wfm_length)
         ct.table[i].waveform.index = wfm_index
         ct.table[i].waveform.length = wfm_length
         ct.table[i].phase0.value = 0
-        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
+        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1] + theta
         
 def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
     
@@ -839,6 +843,21 @@ def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
         ct.table[i].waveform.index = wfm_index
         ct.table[i].amplitude0.value = amp
         ct.table[i].amplitude1.value = amp
+        ct.table[i].phase0.value = 0
+        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
+        
+def ct_arb_amp(ct,wfm_index,exp_pars={},qb_pars9wfm_pars={},n_steps=100):
+    
+    time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
+    fun = lambda x : (1/np.sqrt(wfm_pars['tb'] - x))
+    amp = fun(time_arr)
+    plt.plot(time_arr,amp)
+    dx = int(len(time_arr)/n_steps)
+    for i in range(n_steps):
+        amplitude = amp[i * dx]
+        ct.table[i].waveform.index = wfm_index
+        ct.table[i].amplitude0.value = amplitude
+        ct.table[i].amplitude1.value = amplitude
         ct.table[i].phase0.value = 0
         ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
 
@@ -860,6 +879,7 @@ def init_ct(hdawg_core):
 
 def arb_pulse(ct,table_index,wfm_index,amp,base_theta,theta):
 
+    # print(amp,theta)
     ct.table[table_index].waveform.index = wfm_index
     ct.table[table_index].waveform.samplingRateDivider = 0
     ct.table[table_index].amplitude0.value = amp
@@ -929,8 +949,22 @@ def determine_axes(exp_pars,qb_pars):
         theta_tom = 0
         amp_prep = 1
         amp_tom = 0
-    else:
-        print('Invalid combination!!!')
+    elif exp_pars['tomographic-axis'] == 'X':
+        theta_prep = 90
+        theta_tom = 0
+        amp_prep = 0.25
+        amp_tom = 0.5
+    elif exp_pars['tomographic-axis'] == 'Y':
+        theta_prep = 90
+        theta_tom = 90
+        amp_prep = 0.25
+        amp_tom = 0.5
+    elif exp_pars['tomographic-axis'] == 'Z':
+        theta_prep = 90
+        theta_tom = 0
+        amp_prep = 0.25
+        amp_tom = 0
+        # print('Invalid combination!!!')
     
     amp_prep = amp_prep*base_amp
     amp_tom = amp_tom*base_amp

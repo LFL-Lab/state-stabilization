@@ -9,7 +9,7 @@ Created on Thu Apr 14 11:35:33 2022
 from qubit import qubit
 import numpy as np
 import plotting as pt
-from utilities import compute_bloch,compute_rho
+from utilities import compute_bloch,compute_rho,compute_coherence,compute_purity
 
 device_name = "WM1"
 project = 'coherence-stabilization'
@@ -122,13 +122,23 @@ data = qb.single_shot(device_name,qb_name)
 pt.plot_single_shot(data, qb.exp_pars,qb.qb_pars,qb.iteration)
 
 #%% T1 Measurement
+
+qb.wfm_pars = {
+    't0':                   0.1e-6,
+    'tmax':                 200e-6,
+    'dt':                   1e-6,
+    'fsAWG':                0.6e9,
+    'mu':                   0,
+    'sigma':                30e-3,
+    }
+
 qb.exp_pars = {
     'exp':                  'T1',
     'n_avg':                512,
     'x0':                   100e-9,
-    'xmax':                 250e-6,
-    'dx':                   2e-6,
-    'fsAWG':                0.3e9,
+    'xmax':                 30e-6,
+    'dx':                   0.1e-6,
+    'fsAWG':                0.6e9,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
@@ -146,10 +156,10 @@ pt.plot_T1_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb
 qb.exp_pars = {
     'exp':                  'ramsey',
     'n_avg':                512,
-    'x0':                   60e-9,
-    'xmax':                 200e-6,
-    'dx':                   1000e-9,
-    'fsAWG':                0.6e9,
+    'x0':                   120e-9,
+    'xmax':                 300e-6,
+    'dx':                   2500e-9,
+    'fsAWG':                0.3e9,
     'amp_q':                0.1,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
@@ -186,11 +196,11 @@ fitted_pars,error = qb.fit_data(x_vector=t,y_vector=data,dx=t[-1]/nSteps*1e6,ver
 qb.plot_ramsey_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 #%% Coordinate System Calibration
-
+'''Execute time-based rabi experiment, and measure along 3 different axis at the end'''
 
 qb.exp_pars = {
     'exp':                  't-rabi',
-    'n_avg':                1024,
+    'n_avg':                2048,
     'x0':                   13e-9,
     'xmax':                 0.4e-6,
     'dx':                   6e-9,
@@ -202,37 +212,50 @@ qb.exp_pars = {
 
 t,data_cal,nSteps = qb.tomography_calibration(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=False)
 # fit & plot data
-calib_pars = qb.cal_coord(data_cal)
-pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_pars)
+calib_states = qb.cal_coord(data_cal)
+pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_states)
 
 
-#%% State-stabilization Experiment
-
-initial_states = ['0']
+#%% coherence-stabilization Experiment
 
 qb.wfm_pars = {
-    'tb':       100e-6,
-    'amp':      0,
+    'x0':                   0.05e-6,
+    'xmax':                 30e-6,
+    'dx':                   0.5e-6,
+    'fsAWG':                1.2e9,
+    'mu':                   0,
+    'sigma':                25e-3,
+    'tb':                30e-6+0.1e-6,
     }
 
 qb.exp_pars = {
-    'exp':                  'state-stabilization',
-    'n_avg':                512,
-    'x0':                   100e-9,
-    'xmax':                 3e-6,
-    'dx':                   50e-9,
-    'fsAWG':                1.2e9,
+    'exp':                  'coherence-stabilization',
+    'initial-state':        '7',
+    'n_avg':                1024,
+    'x0':                   qb.wfm_pars['x0'],
+    'xmax':                 qb.wfm_pars['xmax'],
+    'dx':                   qb.wfm_pars['dx'],
+    'fsAWG':                qb.wfm_pars['fsAWG'],
     'amp_q':                0.1,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
 }
 
-t,data,nSteps = qb.state_stabilization(initial_states,qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=False)
+wfms,data,nSteps = qb.coherence_stabilization(qb=qb_name,device_name=device_name,verbose=1,save_data=False)
+t = np.linspace(qb.wfm_pars['x0'],qb.wfm_pars['xmax'],data.shape[1])
 # fit & plot data
-vb = compute_bloch(data[:,:,0], calib_pars)
-rho = compute_rho(vb)
-pt.tom_calib_plot(x_data=t, y_data=data, coords=calib_pars)
-pt.plot_tomography(rho, cal_states=calib_pars)
+v0 = compute_bloch(data[:,0], calib_states)
+vf = compute_bloch(data[:,-1], calib_states)
+rho_0 = compute_rho(v0)
+rho_f = compute_rho(vf)
+
+pt.tom_calib_plot(x_data=t, y_data=data, coords=calib_states,data='data')
+pt.plot_tomography(rho_0,qb.exp_pars['initial-state'], tmax=t[0]*1e6,cal_states=calib_states)
+
+coherence = compute_coherence(data,calib_states,plane='ZX')
+purr = compute_purity(data,calib_states)
+plot_data = [t,coherence,purr,rho_f,wfms]
+pt.plot_coherence(plot_data,qb.exp_pars,qb.qb_pars,qb.wfm_pars,calib_states)
 
 #%% Virtual Z-Gate Experiment
 

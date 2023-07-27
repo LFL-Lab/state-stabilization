@@ -322,7 +322,7 @@ class qubit():
                 except:
                     print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
                     
-                    time.sleep(30)
+                    time.sleep(5)
                     try:
                         self.qa_result_reset()
                     except:
@@ -743,7 +743,7 @@ class qubit():
         
         # setup frequencies and modulation mode
         #sets the modulation ON or OFF. Should be ON 99% of the time
-        if self.qb_pars['qb_IF'] != 0:
+        if self.qb_pars['qb_IF'] != 0 and self.exp_pars['exp'] != 'spectroscopy':
             self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
             self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
         else:
@@ -759,6 +759,8 @@ class qubit():
         # setup waveforms
         if self.exp_pars['exp'] == 'coherence-stabilization' or self.exp_pars['exp'] == 'T1':
             self.sequence = seqs.setup_waveforms(self.sequence,self.wfm_pars,self.exp_pars,self.qb_pars,self.n_points)
+        elif self.exp_pars['exp'] == 'spectroscopy':
+            self.sequence = seqs.setup_waveforms(self.sequence,{},self.exp_pars,self.qb_pars)
         else:
             self.sequence = seqs.setup_waveforms(self.sequence,{},self.exp_pars,self.qb_pars,n_points=self.n_points)
         # setup command table 
@@ -857,7 +859,7 @@ class qubit():
         const_pulse = self.qb_pars['amp_r'] * np.ones(rr_drive_dur)
         self.qa_sequence.waveforms[0] = (Wave(const_pulse, name="w_const", output=OutputType.OUT1),
             Wave(np.zeros(N), name="w_zero", output=OutputType.OUT2))
-        self.qa_sequence.constants['n_avg'] = self.n_steps 
+        self.qa_sequence.constants['n_avg'] = self.n_steps
         self.qa_sequence.constants['rr_reset_time'] = utils.roundToBase(self.exp_pars['rr_reset_time']*225e6)
         self.qa_sequence.constants['delay'] = round(self.qb_pars['cav_resp_time']/(4.4e-9))
         
@@ -903,7 +905,7 @@ class qubit():
                     startQA();
                     playZero(rr_reset_time,AWG_RATE_225MHZ);
                             }
-                wait(1000000);
+                //wait(1000000);
             }'''
             
         return awg_program

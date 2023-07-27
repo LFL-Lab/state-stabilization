@@ -12,7 +12,7 @@ import pandas as pd
 import scipy as scy
 import qutip as qt
 import matplotlib.pyplot as plt
-from utilities import normalize_data,compute_bloch
+from utilities import normalize_data,compute_bloch,compute_coherence,compute_purity
 pi = np.pi
 
 
@@ -330,8 +330,8 @@ def plot_T1_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iter
 def plot_tomography(data,initial_state,tmax,cal_states):
     
     tick_loc = [1,2]
-    yticklabels = [r'$|0\rangle$',r'$|1\rangle$']
-    xticklabels = [r'$\langle0|$',r'$\langle1|$']
+    yticklabels = [r'$|1\rangle$',r'$|0\rangle$']
+    xticklabels = [r'$\langle1|$',r'$\langle0|$']
     ztick_loc = [-1,-0.5,0,0.5,1]
     states = [['$0$','$1$']]
     fig,[ax1,ax2] = qt.qpt_plot(data,states,title='Quantum State Tomography\n'+r'$\rho_0$'+f'= {initial_state[0]} | T = {tmax:.2f}' +r'$\mu$s') 
@@ -464,28 +464,34 @@ def plot_single_shot(datadict, exp_pars={},qb_pars={},iteration=1, axes=0):
     ax.fig.subplots_adjust(top = 0.85)
     # plt.show()
 
-def plot_coherence(data,exp_pars={},qb_pars={},wfm_pars={},cal_states={},savefig=False,project='',device_name='',qb=''):
+def plot_coherence(t_data,data,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_states={},savefig=False,project='',device_name='',qb=''):
     
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
-    fig, axs = plt.subplots(2,2,figsize=(15,13),dpi=150)
+    fig, axs = plt.subplots(2,2,figsize=(12,9),dpi=150)
     # x_vector = x_vector*1e9
-    x_vector = data[0]
-    coherence = data[1]
-    purity = data[2]
-    rho_f = data[3]
-    wfms = data[4]
-    initial_state = exp_pars['initial-state']
+    # x_vector = data[0]
+    t_data = t_data*1e6
+    coherence = compute_coherence(data, calib_states)
+    purity = compute_purity(data, calib_states)
+    # wfms = data[4]
+    plot_data = np.zeros((3,data.shape[1]))
+    for i in range(data.shape[1]):
+        plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
+    labels = ['$v_x$','$v_y$','$v_z$']
+
+    
     # coherence
-    axs[0,0].plot(x_vector*1e6, coherence, '-o', markersize = 3, c='C0')
+    axs[0,0].plot(t_data, coherence, '-o', markersize = 3, c='C0')
     axs[0,0].set_ylabel('C(t)')
     axs[0,0].set_xlabel('Drive Duration ($\mu$s)')
     # purity
-    axs[1,0].plot(x_vector*1e6, purity, '-o', markersize = 3, c='C0')
+    axs[1,0].plot(t_data, purity, '-o', markersize = 3, c='C0')
     axs[1,0].set_ylabel(r'Tr[$\rho^2$(t)]')
     axs[1,0].set_xlabel('Drive Duration ($\mu$s)')
-    # final state in the bloch sphere
-    axs[0,1] = plot_tomography(rho_f,initial_state,x_vector[-1],cal_states)
-    axs[0,1].set_ylabel('C_{ZX}(t)')
+    # bloch vector components
+    axs[0,1].plot(t_data,plot_data[0,:],'-o',color='b',label=labels[0])
+    axs[0,1].plot(t_data,plot_data[1,:],'-x',color='r',label=labels[1])
+    axs[0,1].plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
     axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
     # # sx, sy waveforms
     axs[1,1].plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
@@ -495,7 +501,7 @@ def plot_coherence(data,exp_pars={},qb_pars={},wfm_pars={},cal_states={},savefig
     axs[1,1].legend()
     # # ax.set_title(f'Rabi Measurement {iteration:03d}')
     textstr = f'Initial State: {exp_pars["initial-state"]}'+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}'
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
 
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)

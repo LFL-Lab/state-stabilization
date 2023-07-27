@@ -5,7 +5,7 @@ Created on Thu May 18 11:46:18 2023
 @author: lfl
 """
 
-atten = np.arange(10,40,0.5)
+atten = np.arange(20,40,1)
 
 qb.exp_pars = {
     'num_samples':          512,
@@ -43,13 +43,14 @@ for i in pi_amp:
 '''------------------------------------------------------Punchout----------------------------------------------'''
 
 
-freqs = np.arange(start=6.7035,stop=6.7055,step=50e-6) # frequencies are in GHz
-atten = np.arange(0,18,2)
+freqs = np.arange(start=6.468,stop=6.478,step=200e-6) # frequencies are in GHz
+atten = np.arange(10,35,2.5)
 #print(atten)
 p_data = np.zeros((len(atten),len(freqs)))
 
 qb.exp_pars = {
-    'n_avg':                512,
+    'exp':                  'spectroscopy',
+    'n_avg':                64,
     'element':              'rr',
     'rr_reset_time':        30e-6,
     'satur_dur':            10e-6,
@@ -59,167 +60,70 @@ qb.exp_pars = {
 
 for i,a in enumerate(atten):
     qb.exp_pars['rr_atten'] = a
-    p_data[i,:],I,Q = qb.rr_spectroscopy(freqs=freqs,save_data=False)
-    # qb.rr_spec_plot(freq=freqs,I=I,Q=Q,df=1e9*(freqs[1]-freqs[0]),find_peaks=True)
+    p_data[i,:],I,Q = qb.rr_spectroscopy(freqs=freqs,device_name = device_name,save_data=False)
+    pt.rr_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data[i,:],exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,df=1e9*(freqs[1]-freqs[0]),find_pks=True)
     
-df = qb.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
+df = pt.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel='Frequency (GHz)',
             ylabel='Attenuation (dB)', normalize = True,cbar_label='Magnitude',title='Punchout Measurement')
 
-#%%
+#%% rabi amplitude sweep
 '''------------------------------------------------------Sweep Rabi Amplitude----------------------------------------------'''
 
-try:
-    list_of_files = glob.glob('E:\generalized-markovian-noise\%s\Rabi\RabiPowerSweep\*.csv'%(meas_device))
-    latest_file = max(list_of_files, key=os.path.getctime)
-    iteration_rabi_power_sweep = int(latest_file[-7:-4].lstrip('0')) + 1
-except:
-    iteration_rabi_power_sweep = 1
-
-options_rabi_sweep = {
-    'qubitDriveFreq':   options_rabi['qubitDriveFreq'],
-    'nAverages':         128,
-    'prePulseLength':   options_rabi['prePulseLength'],
-    'postPulseLength':  options_rabi['postPulseLength'],
-    'Tmax':             4e-6,
-    'stepSize':         options_rabi['stepSize'],
-    'nSteps':           101,
-    'measPeriod':       options_rabi['measPeriod'],
-    'mu':               0,
-    'sigma':            0,
-    'AC_freq':          options_rabi['AC_freq'],
-    'source':           2
+qb.exp_pars = {
+    'initial-state':        '0',
+    'exp':                  't-rabi',
+    'n_avg':                128,
+    'x0':                   13e-9,
+    'xmax':                 2e-6,
+    'dx':                   6e-9,
+    'fsAWG':                2.4e9,
+    'amp_q':                0.3,
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
+    'tomographic-axis':     'Z',
     }
 
+
+
 amp = np.linspace(0.01,0.501,51)
-Omega_Rabi = np.zeros(len(amp))
+Omega_Rabi = []
+data = np.zeros((len(amp),299))
 
 for i in range(len(amp)):
-    options_rabi_sweep['amp_q'] = amp[i]
-    if i == 0:
-        setup = [0,1,0]
-    else:
-        setup = [0,1,1]
-        options_rabi_sweep['nSteps'] = nSteps
+    qb.exp_pars['amp_q'] = amp[i]
     # generate data
-    print(' Qubit Amplitude = %.3f V'%(amp[i]))
-    t,data,nSteps = expf.pulse(daq,awg,setup=setup,sequence='rabi',**options_rabi_sweep)
-    fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='rabi',dt=t[-1]/nSteps,**options_rabi_sweep)
+    print(' Qubit Drive Amplitude = %.3f V'%(amp[i]))
+    t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,verbose=1,device_name=device_name,check_mixers=False,save_data=False)
+    # plot data
+    fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data[i,:],exp='t-rabi',dx=t[-1]/nSteps*1e6,verbose=0)
+    # pt.plot_t_rabi_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+    Omega_Rabi.append(1e3/fitted_pars[1])
     # pf.plot_data(awg,x_vector=t,y_vector=I,fitted_pars=fitted_pars,**options_rabi_sweep,plot_mode=0)
-    Omega_Rabi[i] = 1/fitted_pars[1]*1e9
-
-with open("E:\\generalized-markovian-noise\\%s\\Rabi\\RabiPowerSweep\\%s_data_%03d.csv"%(meas_device,'RabiPowerSweep',iteration_rabi_power_sweep),"w",newline="") as datafile:
-    writer = csv.writer(datafile)
-    writer.writerow(options_rabi_sweep.keys())
-    writer.writerow(options_rabi_sweep.values())
-    writer.writerow(amp)
-    writer.writerow(Omega_Rabi)
-
-
-
 
 # load data from previous measurement
-data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\Rabi\\RabiPowerSweep\\%s_data_%03d.csv"%(meas_device,'RabiPowerSweep',iteration_rabi_power_sweep),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
-amp = data[0,:]*1e3
-Omega_Rabi = data[1,:]
-best_vals, covar = scy.optimize.curve_fit(line, amp[0:25],Omega_Rabi[0:25]/1e6,xtol=1e-6,maxfev=3000)
+# data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\Rabi\\RabiPowerSweep\\%s_data_%03d.csv"%(meas_device,'RabiPowerSweep',iteration_rabi_power_sweep),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
+# amp = data[0,:]*1e3
+# Omega_Rabi = data[1,:]
+best_vals, covar = scy.optimize.curve_fit(line, amp[0:25],Omega_Rabi[0:25],xtol=1e-6,maxfev=3000)
 
 fig, ax1 = plt.subplots(dpi=300)
 # plt.xticks(np.arange(-0.1e3,1.1e3,step=0.2))
 # plt.yticks(np.arange(0,12,step=2))
 left,bottom,width,height = [0.58, 0.25, 0.3, 0.4]
 ax2 = fig.add_axes([left,bottom,width,height])
-ax1.plot(amp,Omega_Rabi/1e6, '-o', markersize = 3, c='C0')
+ax1.plot(amp*1e3,Omega_Rabi, '-o', markersize = 3, c='C0')
 ax1.set_xlabel('Qubit Drive Amplitude (mV)')
-ax1.set_ylabel('$\Omega_R$ (MHz)')
-ax2.plot(amp[0:35],Omega_Rabi[0:35]/1e6,amp[0:35],line(amp[0:35],best_vals[0],best_vals[1]))
+ax1.set_ylabel('$f_R$ (MHz)')
+ax2.plot(amp[0:35]*1e3,Omega_Rabi[0:35],amp[0:35]*1e3,line(amp[0:35],best_vals[0],best_vals[1]))
 ax2.set_xlabel('Qubit Drive Amplitude (mV)',fontsize=9)
 ax2.set_ylabel('$\Omega_R$ (MHz) ',fontsize=10)
-plt.xticks(np.arange(0,amp[35],step=100),fontsize=9)
+# plt.xticks(np.arange(0,amp[35],step=1e-4),fontsize=9)
 # plt.yticks(np.arange(0,np.max(Omega_Rabi),step=2),fontsize=9)
-inset_box_txt = '$\Omega_R=$'+"{:.2e}".format(best_vals[0])+'$\\cdot A_d +$' +"{:.2e}".format(best_vals[1])
+inset_box_txt = '$f_R=$'+"{:.2e}".format(best_vals[0])+'$\\cdot A_d +$' +"{:.2e}".format(best_vals[1])
 plt.gcf().text(0.58, 0.675, inset_box_txt, fontsize=10)
 plt.show()
 
 
-
-
-#%% Sweep mu (Mu Calibration)
-
-try:
-    list_of_files = glob.glob('E:\generalized-markovian-noise\%s\Ramsey\AC_stark_calibrations\*.csv'%(meas_device))
-    latest_file = max(list_of_files, key=os.path.getctime)
-    iteration_ramsey_mu_calibration = int(latest_file[-7:-4].lstrip('0')) + 1
-except:
-    iteration_ramsey_mu_calibration = 1
-
-options_ramsey_mu_calibration = {
-    'nAverages':        256,
-    'Tmax':             20e-6,
-    'stepSize':         26e-9,
-    'prePulseLength':   options_ramsey['prePulseLength'],
-    'postPulseLength':  options_ramsey['postPulseLength'],
-    'integration_length': options_ramsey['integration_length'],
-    'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amp_q':     A_d,
-    'active_reset':     True,
-    'threshold':        threshold,
-    'measPeriod':       options_rabi['measPeriod'],
-    'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
-    'pi2Width':         1/2*pi_pulse*1e-9,
-    'mu':               0,
-    'sigma':            0,
-    'AC_freq':          options_ramsey['AC_freq'],
-    'B0':               0,
-    'nu':               0,
-    'tauk':             0,
-    'source':           2,
-}
-
-
-amp = np.arange(4e-3,70e-3,step=3e-3)
-detun_arr = np.zeros(len(amp))
-expf.mixer_calib(sa,awg,'fine',mixer='qubit',threshold=-75,fc=options_ramsey['qubitDriveFreq'],amp=A_d,sweep=0,config=config)
-
-for i in range(len(amp)):
-
-    if i == 0:
-        setup = [0,1,0]
-    else:
-        setup = [0,1,1]
-        options_ramsey_mu_calibration['nSteps'] = nSteps
-    options_ramsey_mu_calibration['mu'] = amp[i]
-    t,data,nSteps = expf.pulse(daq,awg,setup=setup,sequence='ramsey',**options_ramsey_mu_calibration)
-    fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='ramsey',dt=t[-1]/nSteps,**options_ramsey_mu_calibration)
-    detun_arr[i] = fitted_pars[1]
-    # pf.plot_data(awg,x_vector=t,y_vector=I,fitted_pars=fitted_pars,**options_ramsey_mu_calibration,plot_mode=0)
-
-# load data from previous measurement
-data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\Ramsey\\AC_stark_calibrations\\%s_data_%03d.csv"%(meas_device,'mu_calibration',iteration_ramsey_mu_calibration),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
-amp = data[0,:]
-detun_arr = data[1,:]
-
-fig = plt.figure(figsize=(10,7.5),dpi=600)
-ax = fig.add_subplot(111)
-ax.plot(amp*1e3,detun_arr, '-o',linewidth=2, markersize = 6, c='r')
-ax.set_ylabel('Detuning (MHz)',fontsize=30)
-ax.set_xlabel('AC Stark Amplitude (mV)',fontsize=30)
-plt.xticks(fontsize=24)
-plt.yticks(fontsize=24)
-# ax.set_title('Ramsey AC Stark Sigma Calibration')
-ax.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=16)
-plt.savefig("G:\\Shared drives\\LFL\Projects\\Generalized Markovian noise\\paper-figures\\mu_calibration\\"+"mu_calibration", bbox_inches="tight",
-            pad_inches=0.3, transparent=True,format='eps')
-ax.set_title('Ramsey AC stark sweep')
-
-# save data
-with open("E:\\generalized-markovian-noise\\%s\\Ramsey\\AC_stark_calibrations\\%s_data_%03d.csv"%(meas_device,'mu_calibration',iteration_ramsey_mu_calibration),"w",newline="") as datafile:
-    writer = csv.writer(datafile)
-    writer.writerow(options_ramsey_mu_calibration.keys())
-    writer.writerow(options_ramsey_mu_calibration.values())
-    writer.writerow(amp)
-    writer.writerow(detun_arr)
-
-iteration_ramsey_mu_calibration += 1
 
 #%%  Sweep sigma (sigma calibration)
 
@@ -332,12 +236,6 @@ plt.savefig("G:\\Shared drives\\LFL\Projects\\Generalized Markovian noise\\paper
 '''------------------------------------------------------Pipulse Statistics---------------------------------------------------'''
 '''DESCRIPTION: Repeat Rabi Measurement for a couple of hours to determine timescale of environmental fluctuations'''
 
-try:
-    list_of_files = glob.glob('E:\generalized-markovian-noise\%s\Rabi\Rabi_statistics\*.csv'%(meas_device))
-    latest_file = max(list_of_files, key=os.path.getctime)
-    iteration_rabi_statistics = int(latest_file[-7:-4].lstrip('0')) + 1
-except:
-    iteration_rabi_statistics = 1
 
 options_rabi_statistics = {
     'sampling_rate':    options_rabi['sampling_rate'],
@@ -651,81 +549,79 @@ with open("E:\\generalized-markovian-noise\\echo\\echo_statistics\\%s_data_%03d.
 
 iteration_echo_statistics += 1
 
+#%% T1 (noise)
 '''------------------------------------------------------T1 Statistics---------------------------------------------------'''
 '''DESCRIPTION: Repeat Echo Measurement for a couple of hours to determine timescale of environmental fluctuations'''
 
-try:
+qb.wfm_pars = {
+    't0':                   0.1e-6,
+    'tmax':                 100e-6,
+    'dt':                   1e-6,
+    'fsAWG':                0.6e9,
+    'mu':                   0,
+    'sigma':                50e-3,
+    }
 
-    list_of_files = glob.glob('E:\generalized-markovian-noise\%s\T1\T1_statistics\*.csv'%(meas_device))
-    latest_file = max(list_of_files, key=os.path.getctime)
-    iteration_T1_statistics = int(latest_file[-7:-4].lstrip('0')) + 1
-except:
-    iteration_T1_statistics = 1
-
-options_T1_statistics = {
-
-    'sampling_rate':      1.2e9,
-    'nAverages':        options_T1['nAverages'],
-    'Tmax':             options_T1['Tmax'],
-    'stepSize':         options_T1['stepSize'],
-    'integration_length': options_T1['integration_length'],
-    'cav_resp_time':    options_T1['cav_resp_time'],
-    'amp_q':     A_d,
-    'nSteps':           nSteps,
-    'measPeriod':       options_T1['measPeriod'],
-    'qubitDriveFreq':   options_rabi['qubitDriveFreq']+detun,
-    'sweep':            0,
-    'pi2Width':         options_T1['pi2Width'],
-    'mu':               0.305,
-    'sigma':            0,
+qb.exp_pars = {
+    'exp':                  'T1',
+    'n_avg':                256,
+    'x0':                   qb.wfm_pars['t0'],
+    'xmax':                 qb.wfm_pars['tmax'],
+    'dx':                   qb.wfm_pars['dt'],
+    'fsAWG':                qb.wfm_pars['fsAWG'],
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
+    'tomographic-axis':     'Z',
 }
 
+
 nReps = 100
-rep = np.arange(nReps)
-T1_arr = np.zeros(nReps)
-error_arr = np.zeros(nReps)
-now = np.zeros(nReps)
-plot = 1
-
-start = time.time()
+data = np.zeros((nReps,98))
 for i in range(nReps):
-    t,data,nSteps = expf.pulse(daq,awg,setup=[1,1,1],sequence='T1',**options_T1_statistics)
-    fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='T1',dt=t[-1]/nSteps,**options_T1_statistics)
-    T1_arr[i] = fitted_pars[1]
-    pf.plot_data(awg,x_vector=t,y_vector=I,fitted_pars=fitted_pars,sequence='T1',**options_T1_statistics,iteration=iteration_T1_statistics,plot_mode=0)
-    error_arr[i] = max(error)
-    now[i] = time.time()  - start
+    t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 
-# # discard values with high errors
-T1_arr_clean = np.zeros(nReps)
-rep_clean = np.zeros(nReps)
-now_clean = np.zeros(nReps)
+fitted_pars,error = pt.fit_data(x_vector=t,y_vector=np.mean(data,0),exp='T1',dx=t[-1]/nSteps,verbose=0)
+pt.plot_T1_data(t,np.mean(data,0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+
+# start = time.time()
+# for i in range(nReps):
+#     t,data,nSteps = expf.pulse(daq,awg,setup=[1,1,1],sequence='T1',**options_T1_statistics)
+#     fitted_pars,error = pf.fit_data(x_vector=t,y_vector=data,sequence='T1',dt=t[-1]/nSteps,**options_T1_statistics)
+#     T1_arr[i] = fitted_pars[1]
+#     pf.plot_data(awg,x_vector=t,y_vector=I,fitted_pars=fitted_pars,sequence='T1',**options_T1_statistics,iteration=iteration_T1_statistics,plot_mode=0)
+#     error_arr[i] = max(error)
+#     now[i] = time.time()  - start
+
+# # # discard values with high errors
+# T1_arr_clean = np.zeros(nReps)
+# rep_clean = np.zeros(nReps)
+# now_clean = np.zeros(nReps)
 
 
-bad_index_arr = [idx for idx, element in enumerate(error_arr) if condition(element)]
+# bad_index_arr = [idx for idx, element in enumerate(error_arr) if condition(element)]
 
-T1_arr_clean = np.delete(T1_arr,bad_index_arr)
-rep_clean = np.delete(rep,bad_index_arr)
-# time_arr = 14.5*np.arange(len(rep_clean))
-time_arr = 14.5*np.arange(len(now))
+# T1_arr_clean = np.delete(T1_arr,bad_index_arr)
+# rep_clean = np.delete(rep,bad_index_arr)
+# # time_arr = 14.5*np.arange(len(rep_clean))
+# time_arr = 14.5*np.arange(len(now))
 
-fig, ax= plt.subplots()
-fig.suptitle('T1 Statistics %03d'%(iteration_T1_statistics))
-ax.plot(time_arr,T1_arr, '-o', markersize = 3, c='C0')
-ax.set_xlabel('time (sec)')
-ax.set_ylabel('$T_1 (\mu s)$')
+# fig, ax= plt.subplots()
+# fig.suptitle('T1 Statistics %03d'%(iteration_T1_statistics))
+# ax.plot(time_arr,T1_arr, '-o', markersize = 3, c='C0')
+# ax.set_xlabel('time (sec)')
+# ax.set_ylabel('$T_1 (\mu s)$')
 
-# save data
-with open("E:\\generalized-markovian-noise\\%s\\T1\\T1_statistics\\%s_data_%03d.csv"%(meas_device,'T1_statistics',iteration_T1_statistics),"w",newline="") as datafile:
-    writer = csv.writer(datafile)
-    writer.writerow(options_T1_statistics.keys())
-    writer.writerow(options_T1_statistics.values())
-    writer.writerow(T1_arr)
-    writer.writerow(now)
-    writer.writerow(error_arr)
+# # save data
+# with open("E:\\generalized-markovian-noise\\%s\\T1\\T1_statistics\\%s_data_%03d.csv"%(meas_device,'T1_statistics',iteration_T1_statistics),"w",newline="") as datafile:
+#     writer = csv.writer(datafile)
+#     writer.writerow(options_T1_statistics.keys())
+#     writer.writerow(options_T1_statistics.values())
+#     writer.writerow(T1_arr)
+#     writer.writerow(now)
+#     writer.writerow(error_arr)
 
-iteration_T1_statistics += 1
-
+# iteration_T1_statistics += 1
+#%% something else
 '''------------------------------------------------------Measuring the Qubit's Bandwidth via Echo'---------------------------------------------------'''
 '''DESCRIPTION: The goal of this experiment is to determine the lower bound of the qubit's bandwidth by doing echo with increasing noise amplitude'''
 

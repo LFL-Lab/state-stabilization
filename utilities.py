@@ -71,20 +71,21 @@ def gen_arb_wfm(wfm_type,wfm_pars,channel='I',normalize=False,n_points=1024):
     
     if wfm_type == 'rising':
         time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
-        # gamma = wfm_pars['gamma']
-        # fun = lambda x : (1/2*np.sqrt(gamma/(1/gamma - 4*x))) 
-        fun = lambda x : (1/np.sqrt(wfm_pars['tb']-x)) 
-        wfm = fun(time_arr)
-        # wfm = []
+        gamma = 1/wfm_pars['T1']
+        tb = 1/(4*gamma)
+        fun = lambda x : (1/2*np.sqrt(gamma)*1/np.sqrt(tb-x)) 
+        
+        # wfm = fun(time_arr) + wfm_pars['offset']*max(fun(time_arr))
+        
         # for i in range(len(time_arr)):
         #     wfm.append(wfm_pars['slope']*time_arr[i])
         #     if wfm[i] > 0.6:
         #         wfm[i] = 0.6
         # wfm = np.array(wfm)
         if normalize:
-            wfm = wfm/(2*max(wfm))
+            wfm = wfm/(max(wfm))
         # wfm_Q = wfm_pars['amp']*fun(time_arr)
-        print('test')
+        # print('test')
         plt.plot(time_arr,wfm)
     elif wfm_type == 'markov':
         wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], n_points)
@@ -190,7 +191,7 @@ def compute_purity(data,calib_states):
     purr = []
     
     for i in range(data.shape[1]):
-        vb = compute_bloch(data[:,i], calib_states)[0]
+        vb = compute_bloch(data[:,i], calib_states)
         purr.append(1/2*(1+np.linalg.norm(vb)**2))
         
     return np.array(purr)
@@ -203,3 +204,22 @@ def normalize_data(data):
     normalized_data = (data-offset)/amp
     
     return normalized_data
+
+def compute_wfm(time_arr,gamma):
+    
+    wfm = []
+    
+    for i in range(len(time_arr)):
+        value = 1/2*np.sqrt(gamma/(1/gamma - 4*time_arr[i]))
+        wfm.append(value)
+
+    return np.array(wfm)
+
+def compute_wfm_prefactor(f,a,b):
+    
+    amp = (f-b)/a
+    
+    return amp
+
+def line(x,a,b):
+    return a*x+b

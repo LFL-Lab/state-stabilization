@@ -13,19 +13,19 @@ from utilities import compute_bloch,compute_rho,compute_coherence,compute_purity
 
 device_name = "WM1"
 project = 'coherence-stabilization'
-qb_name = 'qb6'
+qb_name = 'qb3'
 qb = qubit(qb_name)
 
 #%% Spectroscopy (Resonator)
 '''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=6.7035,stop=6.706,step=50e-6) # frequencies are in GHz
+freqs = np.arange(start=6.470,stop=6.480,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'exp':                  'spectroscopy',
-    'n_avg':                512,
+    'n_avg':                64,
     'element':              'rr',
-    'rr_reset_time':        20e-6,
+    'rr_reset_time':        5e-6,
     'satur_dur':            2e-6,
     'rr_atten':             30,
     'on_off':               True,
@@ -40,14 +40,14 @@ qb.update_qb_value('rr_LO',fc*1e9)
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=3.8,stop=4,step=100e-6) # frequencies are in GHz
+freqs = np.arange(start=4.3,stop=4.5,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'exp':                  'spectroscopy',
-    'n_avg':                512,
+    'n_avg':                256,
     'element':              'qubit',
     'qubit_reset_time':     200e-6,
-    'amp_q':                0.1,
+    'amp_q':                0.05,
     'satur_dur':            40e-6,
     'on_off':               True,
     'tomographic-axis':     'Z',
@@ -69,7 +69,7 @@ qb.exp_pars = {
     'exp':                  't-rabi',
     'n_avg':                128,
     'x0':                   13e-9,
-    'xmax':                 0.3e-6,
+    'xmax':                 2e-6,
     'dx':                   6e-9,
     'fsAWG':                2.4e9,
     'amp_q':                0.3,
@@ -90,8 +90,8 @@ qb.exp_pars = {
     'exp':                  'p-rabi',
     'n_avg':                512,
     'x0':                   0,
-    'xmax':                 0.5,
-    'dx':                   10e-3,
+    'xmax':                 0.6,
+    'dx':                   100e-3,
     'fsAWG':                2.4e9,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
@@ -125,20 +125,20 @@ pt.plot_single_shot(data, qb.exp_pars,qb.qb_pars,qb.iteration)
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 200e-6,
+    'tmax':                 100e-6,
     'dt':                   1e-6,
     'fsAWG':                0.6e9,
     'mu':                   0,
-    'sigma':                30e-3,
+    'sigma':                50e-3,
     }
 
 qb.exp_pars = {
     'exp':                  'T1',
     'n_avg':                512,
-    'x0':                   100e-9,
-    'xmax':                 30e-6,
-    'dx':                   0.1e-6,
-    'fsAWG':                0.6e9,
+    'x0':                   qb.wfm_pars['t0'],
+    'xmax':                 qb.wfm_pars['tmax'],
+    'dx':                   qb.wfm_pars['dt'],
+    'fsAWG':                qb.wfm_pars['fsAWG'],
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
@@ -219,19 +219,21 @@ pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_states)
 #%% coherence-stabilization Experiment
 
 qb.wfm_pars = {
-    'x0':                   0.05e-6,
-    'xmax':                 30e-6,
-    'dx':                   0.5e-6,
+    'x0':                   0.1e-6,
+    'xmax':                 50e-6,
+    'dx':                   0.1e-6,
     'fsAWG':                1.2e9,
     'mu':                   0,
     'sigma':                25e-3,
-    'tb':                30e-6+0.1e-6,
+    'tb':                   50e-6+0.1e-6,
+    'offset':               0.25,
+    'T1':                30e-6,
     }
 
 qb.exp_pars = {
     'exp':                  'coherence-stabilization',
     'initial-state':        '7',
-    'n_avg':                1024,
+    'n_avg':                512,
     'x0':                   qb.wfm_pars['x0'],
     'xmax':                 qb.wfm_pars['xmax'],
     'dx':                   qb.wfm_pars['dx'],
@@ -251,11 +253,9 @@ rho_f = compute_rho(vf)
 
 pt.tom_calib_plot(x_data=t, y_data=data, coords=calib_states,data='data')
 pt.plot_tomography(rho_0,qb.exp_pars['initial-state'], tmax=t[0]*1e6,cal_states=calib_states)
+pt.plot_tomography(rho_f,qb.exp_pars['initial-state'], tmax=t[-1]*1e6,cal_states=calib_states)
 
-coherence = compute_coherence(data,calib_states,plane='ZX')
-purr = compute_purity(data,calib_states)
-plot_data = [t,coherence,purr,rho_f,wfms]
-pt.plot_coherence(plot_data,qb.exp_pars,qb.qb_pars,qb.wfm_pars,calib_states)
+pt.plot_coherence(t,data,wfms,qb.exp_pars,qb.qb_pars,qb.wfm_pars,calib_states)
 
 #%% Virtual Z-Gate Experiment
 

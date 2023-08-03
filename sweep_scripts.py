@@ -85,7 +85,7 @@ qb.exp_pars = {
 
 
 
-amp = np.linspace(0.01,0.501,51)
+amp = np.linspace(0,0.501,21)
 Omega_Rabi = []
 data = np.zeros((len(amp),299))
 
@@ -104,7 +104,8 @@ for i in range(len(amp)):
 # data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\Rabi\\RabiPowerSweep\\%s_data_%03d.csv"%(meas_device,'RabiPowerSweep',iteration_rabi_power_sweep),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
 # amp = data[0,:]*1e3
 # Omega_Rabi = data[1,:]
-best_vals, covar = scy.optimize.curve_fit(line, amp[0:25],Omega_Rabi[0:25],xtol=1e-6,maxfev=3000)
+cutoff = 10
+best_vals, covar = scy.optimize.curve_fit(line, amp[0:cutoff],Omega_Rabi[0:cutoff],xtol=1e-6,maxfev=3000)
 
 fig, ax1 = plt.subplots(dpi=300)
 # plt.xticks(np.arange(-0.1e3,1.1e3,step=0.2))
@@ -113,8 +114,8 @@ left,bottom,width,height = [0.58, 0.25, 0.3, 0.4]
 ax2 = fig.add_axes([left,bottom,width,height])
 ax1.plot(amp*1e3,Omega_Rabi, '-o', markersize = 3, c='C0')
 ax1.set_xlabel('Qubit Drive Amplitude (mV)')
-ax1.set_ylabel('$f_R$ (MHz)')
-ax2.plot(amp[0:35]*1e3,Omega_Rabi[0:35],amp[0:35]*1e3,line(amp[0:35],best_vals[0],best_vals[1]))
+ax1.set_ylabel('$Omega_R$ (MHz)')
+ax2.plot(amp[0:cutoff]*1e3,Omega_Rabi[0:cutoff],amp[0:cutoff]*1e3,line(amp[0:cutoff],best_vals[0],best_vals[1]))
 ax2.set_xlabel('Qubit Drive Amplitude (mV)',fontsize=9)
 ax2.set_ylabel('$\Omega_R$ (MHz) ',fontsize=10)
 # plt.xticks(np.arange(0,amp[35],step=1e-4),fontsize=9)
@@ -296,103 +297,75 @@ with open("E:\\generalized-markovian-noise\\%s\\rabi\\Rabi_statistics\\%s_data_%
 
 iteration_rabi_statistics += 1
 
+
+#%% ramsey statistics
 '''------------------------------------------------------Ramsey Statistics---------------------------------------------------'''
 '''DESCRIPTION: Repeat Ramsey Measurement for a couple of hours to determine timescale of environmental fluctuations'''
 
-try:
-    list_of_files = glob.glob('E:\\generalized-markovian-noise\\%s\\Ramsey\\ramsey_statistics\\*.csv'%(meas_device))
-    latest_file = max(list_of_files, key=os.path.getctime)
-    iteration_ramsey_statistics = int(latest_file[-7:-4].lstrip('0')) + 1
-except:
-    iteration_ramsey_statistics = 1
 
-options_ramsey_statistics = {
-    'nAverages':        options_ramsey['nAverages'],
-    'Tmax':             options_ramsey['Tmax'],
-    'stepSize':         options_ramsey['stepSize'],
-    'integration_length': options_ramsey['integration_length'],
-    'cav_resp_time':    options_ramsey['cav_resp_time'],
-    'amp_q':     A_d,
-    'measPeriod':       options_ramsey['measPeriod'],
-    'qubitDriveFreq':   options_ramsey['qubitDriveFreq'],
-    'active_reset':     True,
-    'threshold':        threshold,
-    'pi2Width':         options_ramsey['pi2Width'],
-    'mu':               0.315,
-    'sigma':            0.015,
-    'B0':               0,
-    'nu':               0,
-    'tauk':             0,
-    'source':           2,
+qb.exp_pars = {
+    'exp':                  'ramsey',
+    'n_avg':                512,
+    'x0':                   100e-9,
+    'xmax':                 300e-6,
+    'dx':                   2500e-9,
+    'fsAWG':                0.6e9,
+    'amp_q':                0.1,
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
+    'tomographic-axis':     'Z',
 }
 
 nReps = 1000
 rep = np.arange(nReps)
-# detun_arr = np.zeros(nReps)
-# T_phi_arr = np.zeros(nReps)
-data_arr = np.zeros((nReps,nSteps))
-error_arr = np.zeros(nReps)
-time_arr = np.zeros(nReps)
+detun_arr = np.zeros(nReps)
+T_phi_arr = np.zeros(nReps)
+data_arr = np.zeros((nReps,119))
+# error_arr = np.zeros(nReps)
+# time_arr = np.zeros(nReps)
 
-start = time.time()
+# start = time.time()
 
 for i in range(nReps):
-    if i == 0:
-        setup = [0,1,0]
-    else:
-        setup = [2,1,1]
-        options_ramsey_statistics['nSteps'] = nSteps
-    t,data,nSteps = expf.pulse(daq,awg,setup=setup,sequence='ramsey',**options_ramsey_statistics)
+    t,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,check_mixers=False,save_data=True)
     data_arr[i,:] = data
-    # fitted_pars,error = pf.fit_data(x_vector=t,y_vector=I,dt=t[-1]/nSteps,**options_ramsey_statistics)
-    time_arr[i] = time.time()  - start
+    fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp='ramsey',dx=t[-1]/nSteps*1e6,verbose=0)
+    detun_arr[i] = fitted_pars[1]
+    T_phi_arr[i] = fitted_pars[3]
+    # time_arr[i] = time.time()  - start
 
 # # discard values with high errors
-detun_arr_clean = np.zeros(nReps)
-T_phi_arr_clean = np.zeros(nReps)
-rep_clean = np.zeros(nReps)
+# detun_arr_clean = np.zeros(nReps)
+# T_phi_arr_clean = np.zeros(nReps)
+# rep_clean = np.zeros(nReps)
 
+# bad_index_arr = [idx for idx, element in enumerate(error_arr) if condition(element)]
 
-
-bad_index_arr = [idx for idx, element in enumerate(error_arr) if condition(element)]
-
-detun_arr_clean = np.delete(detun_arr,bad_index_arr)
-T_phi_arr_clean = np.delete(T_phi_arr,bad_index_arr)
-rep_clean = np.delete(rep,bad_index_arr)
+# detun_arr_clean = np.delete(detun_arr,bad_index_arr)
+# T_phi_arr_clean = np.delete(T_phi_arr,bad_index_arr)
+# rep_clean = np.delete(rep,bad_index_arr)
 
 # load data from previous measurement
-data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\ramsey\\ramsey_statistics\\%s_data_%03d.csv"%(meas_device,'ramsey_statistics',iteration_ramsey_statistics),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
-re = data[0,:]
-detun_arr = data[1,:]
+# data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\ramsey\\ramsey_statistics\\%s_data_%03d.csv"%(meas_device,'ramsey_statistics',iteration_ramsey_statistics),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
+# re = data[0,:]
+# detun_arr = data[1,:]
 
 fig, (ax1,ax2) = plt.subplots(2,sharex=True)
-ax1.plot(time_arr,np.abs(detun_arr), '-o', markersize = 3, c='C0')
+ax1.plot(np.arange(0,nReps),detun_arr, '-o', markersize = 3, c='C0')
 # ax1.plot(rep_clean,np.abs(detun_arr_clean), '-o', markersize = 3, c='C0')
 ax1.set_ylim((0,1))
 ax1.set_ylabel('$\Delta$ (MHz)')
-fig.suptitle('Ramsey Statistics %03d'%(iteration_ramsey_statistics))
-ax2.plot(time_arr,T_phi_arr, '-o', markersize = 3, c='C0')
+ax2.plot(np.arange(0,nReps),T_phi_arr, '-o', markersize = 3, c='C0')
 
 # ax2.plot(rep_clean,T_phi_arr_clean, '-o', markersize = 3, c='C0')
 ax2.set_xlabel('time (sec)')
 ax2.set_ylabel('$T_{\phi} (\mu s)$')
 # ax2.set_ylim((0,10))
-textstr = "$\omega_d = 2\pi\\times%.4f$ GHz" %(options_ramsey_statistics['qubitDriveFreq']*1e-9)
+
 plt.gcf().text(1, 0.25, textstr, fontsize=14)
 
-# save data
-with open("E:\\generalized-markovian-noise\\%s\\ramsey\\ramsey_statistics\\%s_data_%03d.csv"%(meas_device,'ramsey_statistics',iteration_ramsey_statistics),"w",newline="") as datafile:
-    writer = csv.writer(datafile)
-    writer.writerow(options_ramsey_statistics.keys())
-    writer.writerow(options_ramsey_statistics.values())
-    writer.writerow(t)
-    writer.writerows(data_arr)
-    # writer.writerow(detun_arr)
-    # writer.writerow(T_phi_arr)
-    # writer.writerow(error_arr)
 
-iteration_ramsey_statistics += 1
-
+#%%
 '''------------------------------------------------------Test of Markovianity---------------------------------------------------'''
 '''DESCRIPTION: Repeat Ramsey Measurement for a couple of hours to determine timescale of environmental fluctuations'''
 
@@ -555,16 +528,16 @@ iteration_echo_statistics += 1
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 100e-6,
-    'dt':                   1e-6,
-    'fsAWG':                0.6e9,
+    'tmax':                 15e-6,
+    'dt':                   0.25e-6,
+    'fsAWG':                0.3e9,
     'mu':                   0,
-    'sigma':                50e-3,
+    'sigma':                100e-3,
     }
 
 qb.exp_pars = {
     'exp':                  'T1',
-    'n_avg':                256,
+    'n_avg':                64,
     'x0':                   qb.wfm_pars['t0'],
     'xmax':                 qb.wfm_pars['tmax'],
     'dx':                   qb.wfm_pars['dt'],
@@ -575,8 +548,8 @@ qb.exp_pars = {
 }
 
 
-nReps = 100
-data = np.zeros((nReps,98))
+nReps = 50
+data = np.zeros((nReps,55))
 for i in range(nReps):
     t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 
@@ -611,16 +584,6 @@ pt.plot_T1_data(t,np.mean(data,0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb
 # ax.set_xlabel('time (sec)')
 # ax.set_ylabel('$T_1 (\mu s)$')
 
-# # save data
-# with open("E:\\generalized-markovian-noise\\%s\\T1\\T1_statistics\\%s_data_%03d.csv"%(meas_device,'T1_statistics',iteration_T1_statistics),"w",newline="") as datafile:
-#     writer = csv.writer(datafile)
-#     writer.writerow(options_T1_statistics.keys())
-#     writer.writerow(options_T1_statistics.values())
-#     writer.writerow(T1_arr)
-#     writer.writerow(now)
-#     writer.writerow(error_arr)
-
-# iteration_T1_statistics += 1
 #%% something else
 '''------------------------------------------------------Measuring the Qubit's Bandwidth via Echo'---------------------------------------------------'''
 '''DESCRIPTION: The goal of this experiment is to determine the lower bound of the qubit's bandwidth by doing echo with increasing noise amplitude'''

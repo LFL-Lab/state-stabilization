@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 def gen_seq_code(exp,axis):
 
     if exp == 'spectroscopy':
-        code = spec_sequence()
+        code = spec_sequence(on_off=False)
     elif exp == 't-rabi':
         code = time_rabi_sequence()
     elif exp == 'p-rabi':
@@ -303,10 +303,11 @@ def mixer_calib_sequence():
    
     awg_program = '''
         resetOscPhase();
-        wave w_const = amp*ones(N);
+        wave w_gauss = amp*gauss(N, 1.0, N/2, N/2);
         wave w_zeros = zeros(N);
-
-        playWave(1,2,w_const,1,2,w_zeros);
+        
+        
+        playWave(1,2,w_gauss,1,2,w_zeros);
         playHold(1e9);
     '''
 
@@ -701,13 +702,13 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
          sequence.waveforms[1] = (
          Wave(*make_wave(pulse_type = 'arb_I',
                          wave_name = 'w_arb_I',
-                         amplitude = 1,
+                         amplitude = 0,
                          pulse_length = n_points,
                          wfm_pars = wfm_pars,
                          output_order = '12')), 
          Wave(*make_wave(pulse_type = 'arb_Q',
                          wave_name = 'w_arb_Q',
-                         amplitude = 1,
+                         amplitude = 0,
                          pulse_length = n_points,
                          wfm_pars=wfm_pars,
                          output_order = '12'))

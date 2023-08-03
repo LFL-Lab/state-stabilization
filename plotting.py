@@ -488,14 +488,18 @@ def plot_coherence(t_data,data,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_sta
     axs[1,0].plot(t_data, purity, '-o', markersize = 3, c='C0')
     axs[1,0].set_ylabel(r'Tr[$\rho^2$(t)]')
     axs[1,0].set_xlabel('Drive Duration ($\mu$s)')
+    axs[1,0].set_ylim([0,1.2])
     # bloch vector components
     axs[0,1].plot(t_data,plot_data[0,:],'-o',color='b',label=labels[0])
     axs[0,1].plot(t_data,plot_data[1,:],'-x',color='r',label=labels[1])
     axs[0,1].plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
     axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
+    axs[0,1].legend()
+    axs[0,1].set_ylim([-1,1])
     # # sx, sy waveforms
+    axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)
     axs[1,1].plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
-    axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 3, c='r',label='$\sigma_y$')
+    
     axs[1,1].set_ylabel('A(t)')
     axs[1,1].set_xlabel('Drive Duration ($\mu$s)')
     axs[1,1].legend()

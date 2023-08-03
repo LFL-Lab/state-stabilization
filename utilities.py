@@ -71,22 +71,21 @@ def gen_arb_wfm(wfm_type,wfm_pars,channel='I',normalize=False,n_points=1024):
     
     if wfm_type == 'rising':
         time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
-        gamma = 1/wfm_pars['T1']
-        tb = 1/(4*gamma)
-        fun = lambda x : (1/2*np.sqrt(gamma)*1/np.sqrt(tb-x)) 
+        gamma = 1/(2*wfm_pars['T1'])
+        wfm = compute_wfm(time_arr,gamma)
         
+        
+        # tb = 1/(4*gamma)
+        # fun = lambda x : (gamma_amp/np.sqrt(1-4*gamma*x)) 
         # wfm = fun(time_arr) + wfm_pars['offset']*max(fun(time_arr))
-        
         # for i in range(len(time_arr)):
         #     wfm.append(wfm_pars['slope']*time_arr[i])
         #     if wfm[i] > 0.6:
         #         wfm[i] = 0.6
-        # wfm = np.array(wfm)
-        if normalize:
-            wfm = wfm/(max(wfm))
+        # wfm = np.array(fun(time_arr))
+        # if normalize:
+        #     wfm = wfm/(max(wfm))
         # wfm_Q = wfm_pars['amp']*fun(time_arr)
-        # print('test')
-        plt.plot(time_arr,wfm)
     elif wfm_type == 'markov':
         wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], n_points)
     elif wfm_type == 'telegraph':
@@ -155,6 +154,8 @@ def compute_bloch(data,calib_pars):
     for i in range(3):
         v_b.append(1-2*(data[i]-calib_pars[i])/calib_pars[3])
         
+    v_b[2] = - v_b[2]
+    
     return np.array(v_b)
 
 def compute_rho(vb):
@@ -205,21 +206,45 @@ def normalize_data(data):
     
     return normalized_data
 
-def compute_wfm(time_arr,gamma):
-    
-    wfm = []
-    
-    for i in range(len(time_arr)):
-        value = 1/2*np.sqrt(gamma/(1/gamma - 4*time_arr[i]))
-        wfm.append(value)
+def compute_wfm(time_arr,gamma,plot=True):
+    '''
+    computes amplitude waveform based on input value of decoherence rate gamma
 
+    Parameters
+    ----------
+    time_arr : TYPE
+        DESCRIPTION.
+    gamma : decoherence rate in Hz
+    plot : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    '''
+    wfm = np.zeros(len(time_arr))
+    tb = 1/(4*gamma)
+    for i in range(len(time_arr)):
+        value = -gamma/2/np.sqrt(1 - time_arr[i]/tb)
+        if math.isnan(value):
+            wfm[i:] = wfm[i-1]
+            break
+        else:
+            # print(value*1e-6)
+            wfm[i] = convert_w_to_v(value)
+    
+    # print(wfm)
+    if plot:
+        plt.plot(time_arr,wfm,time_arr,np.full(len(time_arr),tb))
+        plt.ylim([-1,1])
+        
     return np.array(wfm)
 
-def compute_wfm_prefactor(f,a,b):
-    
-    amp = (f-b)/a
-    
-    return amp
+def convert_w_to_v(w,a=21.2,b=-1.22e-2):
+    '''converts input from angular units to amplitude in volts'''
+    return (w*1e-6-b)/a
 
 def line(x,a,b):
     return a*x+b

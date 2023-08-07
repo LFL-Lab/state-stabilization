@@ -31,6 +31,8 @@ def gen_seq_code(exp,axis):
         code = echo_sequence()
     elif exp == 'tomography':
         code = tomography_sequence()
+    elif exp == 'tomography-calibration':
+        code = tomography_calibration_sequence()
     elif exp == 'coherence-stabilization':
         code = state_stabilization_sequence()
     elif exp == 'z-gate':
@@ -109,7 +111,7 @@ def spec_sequence(on_off=True):
     
     return awg_program
 
-def time_rabi_sequence(tomography=False):
+def time_rabi_sequence():
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -135,8 +137,62 @@ def time_rabi_sequence(tomography=False):
     awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
     
     return awg_program
+
+def tomography_calibration_sequence():
+    '''Generate qubit spectroscopy sequence'''
+   
+    awg_program = '''
+    resetOscPhase();
+   
+    wave w_marker = 2*marker(512,1);
+    var i;
+    // Beginning of the core sequencer program executed on the HDAWG at run time
+    repeat(n_avg){
+        for (i=0; i<n_steps+1; i++) {
+                
+        // x tomography
+                if (i==0) {
+                        }
+                else {
+                executeTableEntry(n_steps+1);
+                executeTableEntry(i-1);
+                executeTableEntry(n_steps+2);
+                }
+                executeTableEntry(n_steps+3);
+                _trigger_readout_
+
+        // y tomography
+        
+                if (i==0) {
+                        }
+                else {
+                executeTableEntry(n_steps+1);
+                executeTableEntry(i-1);
+                executeTableEntry(n_steps+2);
+                }
+                executeTableEntry(n_steps+4);
+                _trigger_readout_
+      
+        // z tomography
+        
+                if (i==0) {
+                        }
+                else {
+                executeTableEntry(n_steps+1);
+                executeTableEntry(i-1);
+                executeTableEntry(n_steps+2);
+                }
+                executeTableEntry(n_steps+5);
+                _trigger_readout_
+      }  
+      
+    }'''
+
+    awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
+    
+    return awg_program
  
-def power_rabi_sequence(tomography=False):
+def power_rabi_sequence():
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -157,7 +213,7 @@ def power_rabi_sequence(tomography=False):
     
     return awg_program
  
-def T1_sequence(tomography=False):
+def T1_sequence():
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -178,7 +234,7 @@ def T1_sequence(tomography=False):
     
     return awg_program
  
-def ramsey_sequence(tomography=False):
+def ramsey_sequence():
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -200,7 +256,7 @@ def ramsey_sequence(tomography=False):
     
     return awg_program
 
-def echo_sequence(tomography=False):
+def echo_sequence():
 
     awg_program = '''
     resetOscPhase();
@@ -221,7 +277,7 @@ def echo_sequence(tomography=False):
 
     return awg_program
  
-def z_gate_sequence(tomography=False):
+def z_gate_sequence():
     '''Generate qubit spectroscopy sequence'''
    
     awg_program = '''
@@ -409,7 +465,7 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         output_order = '2'))
     )
 
-    elif exp == 't-rabi':
+    elif exp == 't-rabi' or exp == 'tomography-calibration':
         N = 64
         amp = exp_pars['amp_q']       
     
@@ -708,13 +764,24 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                          output_order = '12')), 
          Wave(*make_wave(pulse_type = 'arb_Q',
                          wave_name = 'w_arb_Q',
-                         amplitude = 0,
+                         amplitude = 1,
                          pulse_length = n_points,
                          wfm_pars=wfm_pars,
                          output_order = '12'))
      )
+         sequence.waveforms[2] = (
+         Wave(*make_wave(pulse_type = 'pi',
+                         wave_name = 'w_tom_I',
+                         amplitude = 1,
+                         pulse_length = N,
+                         output_order = '12')), 
+         Wave(*make_wave(pulse_type = 'zero',
+                         wave_name = 'w_tom_Q',
+                         amplitude = 0,
+                         pulse_length = N,
+                         output_order = '12')))
 
-       
+        
 
        
          
@@ -772,7 +839,7 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         sweep_var = 'amp'
     elif exp == 'z-gate':
         sweep_var = 'phase'
-    elif exp == 'single-shot' or exp == 'coherence-stabilization':
+    elif exp == 'single-shot' or exp == 'coherence-stabilization' or exp == 'tomography-calibration':
         sweep_var = None
     elif exp != 'spectroscopy':
         sweep_var='time'
@@ -799,8 +866,8 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         wfm_index = 0
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
         ct_sweep_length(ct,exp,1,qb_pars,x0,dx,0,n_steps)
-        ct = arb_pulse(ct,n_steps,wfm_index,amp_prep,base_theta,theta_prep) # preparation pulse
-        ct = arb_pulse(ct,n_steps+1,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
+        ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
+        ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
         
     elif exp == 't-rabi':
         wfm_index = 3
@@ -810,6 +877,21 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0)
         wfm_index = 1 # gauss fall
         ct = arb_pulse(ct,n_steps+2,wfm_index,1,base_theta,0)
+    elif exp == 'tomography-calibration':
+        wfm_index = 0 # gauss rise
+        ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0)
+        wfm_index = 1 # gauss fall
+        ct = arb_pulse(ct,n_steps+2,wfm_index,1,base_theta,0)
+        wfm_index = 2 # middle pulse
+        ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,0,n_steps)
+        wfm_index = 3
+        exp_pars['tomographic-axis'] = 'X'
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct = arb_pulse(ct,n_steps+3,wfm_index,amp_tom,base_theta,theta_tom) # X tomography pulse
+        exp_pars['tomographic-axis'] = 'Y'
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct = arb_pulse(ct,n_steps+4,wfm_index,amp_tom,base_theta,theta_tom) # Y tomography pulse
+        ct = arb_pulse(ct,n_steps+5,wfm_index,0,base_theta,0) # Z tomography pulse
     elif exp == 'T1':
         wfm_index = 0
         ct = arb_pulse(ct,n_steps,wfm_index,1,base_theta,0) # pi_pulse
@@ -824,7 +906,7 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     
 def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
     
-    if exp == 't-rabi':
+    if exp == 't-rabi' or exp == 'tomography-calibration':
         stop = n_steps+1
     else:
         stop = n_steps
@@ -834,6 +916,8 @@ def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
         # print(wfm_length)
         ct.table[i].waveform.index = wfm_index
         ct.table[i].waveform.length = wfm_length
+        ct.table[i].amplitude0.value = 1.0
+        ct.table[i].amplitude1.value = 1.0
         ct.table[i].phase0.value = 0
         ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1] + theta
         
@@ -847,20 +931,20 @@ def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
         ct.table[i].phase0.value = 0
         ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
         
-def ct_arb_amp(ct,wfm_index,exp_pars={},qb_pars9wfm_pars={},n_steps=100):
+# def ct_arb_amp(ct,wfm_index,exp_pars={},qb_pars9wfm_pars={},n_steps=100):
     
-    time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
-    fun = lambda x : (1/np.sqrt(wfm_pars['tb'] - x))
-    amp = fun(time_arr)
-    plt.plot(time_arr,amp)
-    dx = int(len(time_arr)/n_steps)
-    for i in range(n_steps):
-        amplitude = amp[i * dx]
-        ct.table[i].waveform.index = wfm_index
-        ct.table[i].amplitude0.value = amplitude
-        ct.table[i].amplitude1.value = amplitude
-        ct.table[i].phase0.value = 0
-        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
+#     time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
+#     fun = lambda x : (1/np.sqrt(wfm_pars['tb'] - x))
+#     amp = fun(time_arr)
+#     plt.plot(time_arr,amp)
+#     dx = int(len(time_arr)/n_steps)
+#     for i in range(n_steps):
+#         amplitude = amp[i * dx]
+#         ct.table[i].waveform.index = wfm_index
+#         ct.table[i].amplitude0.value = amplitude
+#         ct.table[i].amplitude1.value = amplitude
+#         ct.table[i].phase0.value = 0
+#         ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
 
 def ct_sweep_phase(ct,exp_pars,wfm_index,n_steps):
     
@@ -898,38 +982,42 @@ def determine_axes(exp_pars,qb_pars):
     
     if exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'X':
         theta_prep = theta_tom = 0
-        amp_prep = amp_tom = 0.5
+        amp_prep = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == 'Y' and exp_pars['tomographic-axis'] == 'X':
         theta_prep = 90
         theta_tom = 0
-        amp_prep = amp_tom = 0.5
+        amp_prep = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == '0' and exp_pars['tomographic-axis'] == 'X':
         theta_prep = 0
-        theta_tom = 0
+        theta_tom = 180
         amp_prep = 0
         amp_tom = 0.5
     elif exp_pars['initial-state'] == '1' and exp_pars['tomographic-axis'] == 'X':
         theta_prep = 0
         theta_tom = 0
         amp_prep = 1
-        amp_tom = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'Y':
         theta_prep = 0
         theta_tom = 90
-        amp_prep = amp_tom = 0.5
+        amp_prep = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == 'Y' and exp_pars['tomographic-axis'] == 'Y':
         theta_prep = theta_tom = 90
-        amp_prep = amp_tom = 0.5
+        amp_prep = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == '0' and exp_pars['tomographic-axis'] == 'Y':
         theta_prep = 0
-        theta_tom = 90
+        theta_tom = -90
         amp_prep = 0
         amp_tom = 0.5
     elif exp_pars['initial-state'] == '1' and exp_pars['tomographic-axis'] == 'Y':
         theta_prep = 0
         theta_tom = 90
         amp_prep = 1
-        amp_tom = 0.5
+        amp_tom = -0.5
     elif exp_pars['initial-state'] == 'X' and exp_pars['tomographic-axis'] == 'Z':
         theta_prep = 0
         theta_tom = 0
@@ -952,12 +1040,12 @@ def determine_axes(exp_pars,qb_pars):
         amp_tom = 0
     elif exp_pars['tomographic-axis'] == 'X':
         theta_prep = 90
-        theta_tom = 0
+        theta_tom = 180
         amp_prep = 0.25
         amp_tom = 0.5
     elif exp_pars['tomographic-axis'] == 'Y':
         theta_prep = 90
-        theta_tom = 90
+        theta_tom = -90
         amp_prep = 0.25
         amp_tom = 0.5
     elif exp_pars['tomographic-axis'] == 'Z':

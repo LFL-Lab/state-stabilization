@@ -530,9 +530,9 @@ qb.wfm_pars = {
     't0':                   0.1e-6,
     'tmax':                 15e-6,
     'dt':                   0.25e-6,
-    'fsAWG':                0.3e9,
+    'fsAWG':                0.6e9,
     'mu':                   0,
-    'sigma':                100e-3,
+    'sigma':                150e-3,
     }
 
 qb.exp_pars = {
@@ -549,7 +549,7 @@ qb.exp_pars = {
 
 
 nReps = 50
-data = np.zeros((nReps,55))
+data = np.zeros((nReps,62))
 for i in range(nReps):
     t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 

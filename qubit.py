@@ -586,22 +586,22 @@ class qubit():
         # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
         # requirement of the AWG is satisfied.
         self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.exp_pars,verbose)
-        self.wfm_pars = {}
-        self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
-        self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
-        self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
+        # self.wfm_pars = {}
+        # self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
+        # self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
+        # self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
         # setup QA AWG
         self.setup_qa_awg(ssb=False) # setup QA AWG for readout
         
         # setup QA Result unit
-        self.config_qa(result_length=self.n_steps,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
+        self.config_qa(result_length=3*(self.n_steps+1),source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
         self.qa.sync()
         
         # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
             self.setup_active_reset(self.qb_pars['threshold'])
 
-        exp_dur = self.calc_timeout()
+        exp_dur = 3*self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
 
         if self.exp_pars['active_reset'] == True:
@@ -612,42 +612,42 @@ class qubit():
         data = np.zeros((3,self.n_steps+1))
         self.exp_pars['initial-state'] = '0'
         
-        for i,st in enumerate(['X','Y','Z']):
+        # for i,st in enumerate(['X','Y','Z']):
             
-            self.exp_pars['tomographic-axis'] = st
-            self.setup_awg()
-            self.enable_awg(self.qa,enable=1) # start the readout sequence
-            sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
-            self.qa_result_enable() # arm the qa
-            str_meas = time.time()
-            self.enable_awg(self.awg,enable=1) #runs the drive sequence
-            temp = self.acquisition_poll(paths, num_samples = self.n_steps+1, timeout = 2*timeout) # retrieve data from UHFQA
-            end_meas = time.time()
-            print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
-            for path, samples in temp.items():
-                sweep_data[path] = np.append(sweep_data[path], samples) 
-            # reset QA result unit and stop AWGs
-            self.stop_result_unit(paths)
-            norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-            data[i,:] = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
-            # self.qa_result_reset()
-            # self.enable_awg(self.qa,enable=0) # start the readout sequence
+        self.exp_pars['tomographic-axis'] = 'X'
+        self.setup_awg()
+        self.enable_awg(self.qa,enable=1) # start the readout sequence
+        sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
+        self.qa_result_enable() # arm the qa
+        str_meas = time.time()
+        self.enable_awg(self.awg,enable=1) #runs the drive sequence
+        temp = self.acquisition_poll(paths, num_samples = 3*(self.n_steps+1), timeout = 3.5*timeout) # retrieve data from UHFQA
+        end_meas = time.time()
+        print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+        for path, samples in temp.items():
+            sweep_data[path] = np.append(sweep_data[path], samples) 
+        # reset QA result unit and stop AWGs
+        self.stop_result_unit(paths)
+        norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
+        unsorted_data = sweep_data[paths[0]][:]
+        # print(unsorted_data)
+        sorted_data = utils.sort_data(unsorted_data)/norm
+        # print(sorted_data)
+            # data[i,:] = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
+        # self.qa_result_reset()
+        self.enable_awg(self.qa,enable=0) # stop the readout sequence
                 
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
         # correct values for the x-axis
         x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
-        
-        if source == 2 or source == 1:
-            results = data
-        elif source == 7:
-            I = data.real
-            Q = data.imag
-            results = [[I],[Q]]
+        # print(unsorted_data)
+        # print(sorted_data)
+
 
         if save_data:
-            self.save_data(qb,device_name,data=np.vstack((x_array,results)))
-            
-        return x_array,results,self.n_steps 
+            self.save_data(qb,device_name,data=np.vstack((x_array,sorted_data)))
+        
+        return x_array,sorted_data,self.n_steps 
     
     def coherence_stabilization(self,device_name='',qb='',calibrate=False,verbose=True,save_data = False):
         
@@ -1590,12 +1590,15 @@ class qubit():
 
 
     def min_leak(self,inst,f_LO=1e9,f_IF = 0,mixer='qubit',threshold=-50,span=0.5e6,cal='lo',amp=0.2,measON=False,plot=False):
+        
         if inst == self.awg:
             device = 'dev8233'
         elif inst == self.qa:
             device = 'dev2528'
-        atten = self.qb_pars['rr_atten']
+            atten = self.qb_pars['rr_atten']
+            instfuncs.set_attenuator(0)
 
+            
         OFF_power = self.get_power(fc=f_LO,threshold=-70,plot=True,span=span)
         
         if OFF_power > - 50:
@@ -1606,7 +1609,7 @@ class qubit():
             dV = 0.2e-3
         
         threshold = OFF_power + 5  
-        print(f'Setting SA threshold to {threshold:.1f} dBm')
+        print(f'LO leakage is {OFF_power:.1f} dBm\nSetting SA threshold to {threshold:.1f} dBm')
             
         self.config_sa(fc=f_LO,threshold=threshold)
         
@@ -1627,11 +1630,6 @@ class qubit():
         L1 = len(VoltRange1)
         L2 = len(VoltRange2)
         power_data = np.zeros((L1,L2))
-
-        if mixer == 'rr':
-            instfuncs.set_attenuator(0)
-        else:
-            pass
         
         start = time.time()
         # Sweep individual channel voltages and find leakage
@@ -1652,6 +1650,7 @@ class qubit():
         # set voltages to optimal values
         inst.set(f'/{device}/sigouts/0/offset',opt_I)
         inst.set(f'/{device}/sigouts/1/offset',opt_Q)
+        
         if inst == self.awg:
             self.update_qb_value('qb_mixer_offsets', [opt_I,opt_Q])
 
@@ -1715,16 +1714,16 @@ class qubit():
             da = 50e-3
             span_phi = 3.1
             dp = 0.5
-            threshold = -30
         else:
-            span_amp = 50.001e-3
-            da = 10e-4
-            span_phi = 0.501
+            span_amp = 40.001e-3
+            da = 20e-4
+            span_phi = 0.701
             dp = 0.1
-            threshold = -80
-        
-        start = time.time()
 
+        threshold = OFF_power + 5  
+        print(f'Image Sideband leakage is {OFF_power:.1f} dBm\nSetting SA threshold to {threshold:.1f} dBm')        
+        start = time.time()
+        
         # get current values of phase and amplitude
         a0 = self.qb_pars['qb_mixer_imbalance'][0]
         p0 = self.qb_pars['qb_mixer_imbalance'][1]
@@ -1819,14 +1818,19 @@ class qubit():
         
         return data
     
-    def cal_coord(self,data):
+    def cal_coord(self,data,fitted_pars):
         
-        px = py =  min(data[0,:])
-        exc = min(data[2,:])
+        offset = 1e-3*fitted_pars[-1]
+        amp = 1e-3*fitted_pars[0]
         
-        vpp = abs(max(data[0,:])-min(data[0,:]))
+        # px  =  py = max(data[0,:]) 
+        px = py = grn = offset+amp
+        # grn = max(data[2,:])
         
-        return px,py,exc,vpp
+        # vpp = abs(max(data[0,:])-min(data[0,:]))
+        vpp = 2 * amp
+        
+        return px,py,grn,vpp
             
     def enable_awg(self,inst, enable=1):
         '''
@@ -1874,7 +1878,7 @@ class qubit():
             elif self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
                 value = ct.table[i].waveform.length
                 x_array.append(int(value))
-                if i == self.n_steps-1 and self.exp_pars['exp'] == 't-rabi':
+                if i == self.n_steps-1 and (self.exp_pars['exp'] == 't-rabi' or self.exp_pars['exp'] == 'tomography-calibration'):
                     x_array.insert(0, 0)
             
         return np.array(x_array)

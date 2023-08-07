@@ -352,6 +352,7 @@ def tom_calib_plot(x_data,y_data,coords,data='cal'):
     
     x_data = x_data*1e6
     plot_data = np.zeros(y_data.shape)
+    # plot_data = y_data
     
     if data == 'cal':
         # y_data = y_data*1e3
@@ -495,7 +496,7 @@ def plot_coherence(t_data,data,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_sta
     axs[0,1].plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
     axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
     axs[0,1].legend()
-    axs[0,1].set_ylim([-1,1])
+    axs[0,1].set_ylim([-1.0,1.0])
     # # sx, sy waveforms
     axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)
     axs[1,1].plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
@@ -504,7 +505,7 @@ def plot_coherence(t_data,data,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_sta
     axs[1,1].set_xlabel('Drive Duration ($\mu$s)')
     axs[1,1].legend()
     # # ax.set_title(f'Rabi Measurement {iteration:03d}')
-    textstr = f'Initial State: {exp_pars["initial-state"]}'+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}'
+    textstr = f'Initial State: {exp_pars["initial-state"]}'+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.1f}'+r'$\mu$s'
     # plt.tight_layout()
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
 

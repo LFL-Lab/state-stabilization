@@ -71,7 +71,7 @@ def gen_arb_wfm(wfm_type,wfm_pars,channel='I',normalize=False,n_points=1024):
     
     if wfm_type == 'rising':
         time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
-        gamma = 1/(2*wfm_pars['T1'])
+        gamma = 1/(wfm_pars['T2'])
         wfm = compute_wfm(time_arr,gamma)
         
         
@@ -125,7 +125,7 @@ def calc_steps(pars,verbose=True):
     t0 = roundToBase(pars['fsAWG']*pars['x0'])
     dt = roundToBase(pars['fsAWG']*pars['dx'])
     n_points = roundToBase((pars['xmax']-pars['x0'])*pars['fsAWG']) # this ensures there is an integer number of time points
-    n_steps = int(n_points/dt) # 1 is added to include the first point
+    n_steps = int(n_points/dt) 
     tmax = dt*n_steps
    
     if verbose:
@@ -149,12 +149,13 @@ def generate_xarray(pars):
     return x0,xmax,dx,x_array,n_steps
 
 def compute_bloch(data,calib_pars):
+    '''computes bloch vector components given the calibrated voltages'''
     v_b = []
     
     for i in range(3):
-        v_b.append(1-2*(data[i]-calib_pars[i])/calib_pars[3])
+        v_b.append(1-2*abs((data[i]-calib_pars[2]))/calib_pars[3])
         
-    v_b[2] = - v_b[2]
+    # v_b[2] = - v_b[2]
     
     return np.array(v_b)
 
@@ -227,9 +228,9 @@ def compute_wfm(time_arr,gamma,plot=True):
     wfm = np.zeros(len(time_arr))
     tb = 1/(4*gamma)
     for i in range(len(time_arr)):
-        value = -gamma/2/np.sqrt(1 - time_arr[i]/tb)
+        value = -gamma/np.sqrt(1 - time_arr[i]/tb)
         if math.isnan(value):
-            wfm[i:] = wfm[i-1]
+            wfm[i:] = 0
             break
         else:
             # print(value*1e-6)
@@ -248,3 +249,16 @@ def convert_w_to_v(w,a=21.2,b=-1.22e-2):
 
 def line(x,a,b):
     return a*x+b
+
+def sort_data(unsorted_data):
+    
+    L = len(unsorted_data)
+    # print(L)
+    sorted_data = np.zeros((3,int(L/3)))
+    for i in range(L):
+        j = i % 3
+        k = int(i/3)
+        sorted_data[j,k] = unsorted_data[i]
+    
+    return sorted_data
+            

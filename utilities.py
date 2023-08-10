@@ -9,6 +9,8 @@ import time
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import signal
+# from plotting import extract_freq
 
 # Retry decorator with exponential backoff
 def retry(tries, delay=3, backoff=2):
@@ -66,28 +68,21 @@ def Watt2dBm(x):
     '''
     return 10.*np.log10(x*1000.)
 
-def gen_arb_wfm(wfm_type,wfm_pars,channel='I',normalize=False,n_points=1024):
-    
-    
+def gen_arb_wfm(wfm_type,wfm_pars,normalize=False,n_points=1024):
+    '''a function that generates different types of arbitrary waveforms, based on the wfm parameters'''
+    time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
     if wfm_type == 'rising':
-        time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
-        gamma = 1/(wfm_pars['T2'])
+        gamma = 1/(2*wfm_pars['T2'])
         wfm = compute_wfm(time_arr,gamma)
-        
-        
-        # tb = 1/(4*gamma)
-        # fun = lambda x : (gamma_amp/np.sqrt(1-4*gamma*x)) 
-        # wfm = fun(time_arr) + wfm_pars['offset']*max(fun(time_arr))
-        # for i in range(len(time_arr)):
-        #     wfm.append(wfm_pars['slope']*time_arr[i])
-        #     if wfm[i] > 0.6:
-        #         wfm[i] = 0.6
-        # wfm = np.array(fun(time_arr))
-        # if normalize:
-        #     wfm = wfm/(max(wfm))
-        # wfm_Q = wfm_pars['amp']*fun(time_arr)
     elif wfm_type == 'markov':
         wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], n_points)
+        Nf = 1/2*wfm_pars["fsAWG"]
+        # print(f'Nyquist frequency is {Nf*1e-6:.1f} MHz')
+        fc = 30e6
+        Wn = fc/Nf
+        b,a = signal.butter(8,Wn,btype='lowpass')
+        wfm = signal.lfilter(b, a, wfm)
+        # extract_freq(time_arr, wfm, wfm_pars['dt']*1e6,plot=1)
     elif wfm_type == 'telegraph':
         wfm = np.cos(2*np.pi*wfm_pars['nu']*1e3*time_arr + 2*np.pi*np.random.rand()) * gen_tel_noise(len(time_arr), wfm_pars['tau'], dt = wfm_pars['tmax']/len(time_arr))
 
@@ -150,14 +145,13 @@ def generate_xarray(pars):
 
 def compute_bloch(data,calib_pars):
     '''computes bloch vector components given the calibrated voltages'''
-    v_b = []
+    v_b = np.zeros((3,data.shape[1]))
     
-    for i in range(3):
-        v_b.append(1-2*abs((data[i]-calib_pars[2]))/calib_pars[3])
+    for j in range(data.shape[1]):
+        for i in range(3):
+            v_b[i,j] = 1-2*abs((data[i,j]-calib_pars[2]))/calib_pars[3]
         
-    # v_b[2] = - v_b[2]
-    
-    return np.array(v_b)
+    return v_b
 
 def compute_rho(vb):
     
@@ -169,32 +163,32 @@ def compute_rho(vb):
     
     return rho
 
-def compute_coherence(data,calib_states,plane='ZX'):
+def compute_coherence(vb,calib_states,plane='ZX'):
     
     v1 = []
     v2 = []
     coherence = []
     
-    for i in range(data.shape[1]):
+    for i in range(vb.shape[1]):
         # print(np.array(calib_states)*1e3)
-        vb = compute_bloch(data[:,i], calib_states)
+        # vb = compute_bloch(data[:,i], calib_states)
         if plane == 'XY':
-            v1.append(vb[0])
-            v2.append(vb[1])
+            v1.append(vb[0,i])
+            v2.append(vb[1,i])
         elif plane == 'ZX':
-            v1.append(vb[2])
-            v2.append(vb[0])
+            v1.append(vb[2,i])
+            v2.append(vb[0,i])
         coherence.append(v1[i]**2+v2[i]**2)
     
     return np.array(coherence)
 
-def compute_purity(data,calib_states):
+def compute_purity(v_b,calib_states):
     
     purr = []
     
-    for i in range(data.shape[1]):
-        vb = compute_bloch(data[:,i], calib_states)
-        purr.append(1/2*(1+np.linalg.norm(vb)**2))
+    for i in range(v_b.shape[1]):
+        # vb = compute_bloch(data[:,i], calib_states)
+        purr.append(1/2*(1+np.linalg.norm(v_b[:,i])**2))
         
     return np.array(purr)
 
@@ -243,9 +237,9 @@ def compute_wfm(time_arr,gamma,plot=True):
         
     return np.array(wfm)
 
-def convert_w_to_v(w,a=21.2,b=-1.22e-2):
+def convert_w_to_v(w,a=21.2,b=0):
     '''converts input from angular units to amplitude in volts'''
-    return (w*1e-6-b)/a
+    return (w*1e-6-b)/(2*np.pi*a)
 
 def line(x,a,b):
     return a*x+b

@@ -327,13 +327,17 @@ def state_stabilization_sequence():
     var i;
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
+        _trigger_readout_ // t = 0 measurement
         for (i=0; i<n_steps; i++) {
                 executeTableEntry(n_steps);
                 executeTableEntry(i);
                 executeTableEntry(n_steps+1);
                 _trigger_readout_
+                }
+                executeTableEntry(n_steps+2); //do pi pulse
+                _trigger_readout_
       }
-    }'''
+    '''
     
     return awg_program
  
@@ -421,9 +425,9 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
     elif pulse_type == 'arb_I':
-        pulse = amplitude*gen_arb_wfm('rising',wfm_pars,channel='I',normalize=True)
+        pulse = amplitude*gen_arb_wfm('rising',wfm_pars,normalize=True)
     elif pulse_type == 'arb_Q':
-        pulse = amplitude*gen_arb_wfm('markov',wfm_pars,channel='Q',n_points=pulse_length)
+        pulse = amplitude*gen_arb_wfm('markov',wfm_pars,n_points=pulse_length)
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -758,7 +762,7 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
          sequence.waveforms[1] = (
          Wave(*make_wave(pulse_type = 'arb_I',
                          wave_name = 'w_arb_I',
-                         amplitude = 0,
+                         amplitude = 1,
                          pulse_length = n_points,
                          wfm_pars = wfm_pars,
                          output_order = '12')), 
@@ -789,7 +793,6 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
     elif exp == 'single-shot':
         N = qb_pars['pi_len']
         amp = qb_pars['pi_amp']
-    #pi_pulse = qb_pars['pi_amp'] * gaussian (N,N/5)
         sequence.waveforms[0] = (
         Wave(*make_wave(pulse_type = 'pi',
                         wave_name = 'w_pi_I',
@@ -833,7 +836,7 @@ def setup_seq_pars(sequence,exp,exp_pars={},qb_pars={},n_steps=100):
 def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100):
    
     exp = exp_pars['exp']
-    base_theta = 90 + qb_pars['qb_mixer_imbalance'][1] 
+    base_theta = 180 + qb_pars['qb_mixer_imbalance'][1] 
     
     if exp == 'p-rabi':
         sweep_var = 'amp'
@@ -865,9 +868,10 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     if exp == 'coherence-stabilization':
         wfm_index = 0
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
-        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,0,n_steps)
+        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps)
         ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
         ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
+        ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_amp'],base_theta,0) # pi pulse
         
     elif exp == 't-rabi':
         wfm_index = 3
@@ -906,10 +910,12 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     
 def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
     
-    if exp == 't-rabi' or exp == 'tomography-calibration':
-        stop = n_steps+1
-    else:
-        stop = n_steps
+    # if exp == 't-rabi' or exp == 'tomography-calibration':
+    #     n_steps += 1
+    # elif exp == 'coherence-stabilization':
+    #     n_steps += 2
+    # else:
+    #     pass
     
     for i in range(n_steps):
         wfm_length = x0 + i * dx
@@ -918,8 +924,8 @@ def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
         ct.table[i].waveform.length = wfm_length
         ct.table[i].amplitude0.value = 1.0
         ct.table[i].amplitude1.value = 1.0
-        ct.table[i].phase0.value = 0
-        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1] + theta
+        ct.table[i].phase0.value = theta
+        ct.table[i].phase1.value = 180 + qb_pars['qb_mixer_imbalance'][1] + theta
         
 def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
     
@@ -929,7 +935,7 @@ def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
         ct.table[i].amplitude0.value = amp
         ct.table[i].amplitude1.value = amp
         ct.table[i].phase0.value = 0
-        ct.table[i].phase1.value = 90 + qb_pars['qb_mixer_imbalance'][1]
+        ct.table[i].phase1.value =180 + qb_pars['qb_mixer_imbalance'][1]
         
 # def ct_arb_amp(ct,wfm_index,exp_pars={},qb_pars9wfm_pars={},n_steps=100):
     

@@ -12,6 +12,7 @@ import pandas as pd
 import scipy as scy
 import qutip as qt
 import matplotlib.pyplot as plt
+import lmfit
 from utilities import normalize_data,compute_bloch,compute_coherence,compute_purity
 pi = np.pi
 
@@ -465,22 +466,23 @@ def plot_single_shot(datadict, exp_pars={},qb_pars={},iteration=1, axes=0):
     ax.fig.subplots_adjust(top = 0.85)
     # plt.show()
 
-def plot_coherence(t_data,data,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_states={},savefig=False,project='',device_name='',qb=''):
+def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_states={},savefig=False,project='',device_name='',qb=''):
     
+    v_b = v_b[:,1:-1]
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, axs = plt.subplots(2,2,figsize=(12,9),dpi=150)
     # x_vector = x_vector*1e9
     # x_vector = data[0]
     t_data = t_data*1e6
-    coherence = compute_coherence(data, calib_states)
-    purity = compute_purity(data, calib_states)
+    coherence = compute_coherence(v_b, calib_states)
+    purity = compute_purity(v_b, calib_states)
     # wfms = data[4]
-    plot_data = np.zeros((3,data.shape[1]))
-    for i in range(data.shape[1]):
-        plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
+    plot_data = v_b
+    # for i in range(v_b.shape[1]):
+    #     plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
     labels = ['$v_x$','$v_y$','$v_z$']
 
-    
+    print(coherence.shape)
     # coherence
     axs[0,0].plot(t_data, coherence, '-o', markersize = 3, c='C0')
     axs[0,0].set_ylabel('C(t)')
@@ -733,6 +735,13 @@ def get_envelope(sig,dt, distance):
     # l = scipy.interpolate.interp1d(l_x, l_y,kind='cubic')
     return u
 
+# def fit_2D_gauss(data_off,data_pi):
+#     '''Takes single shot data and extracts mu and sigma for the 2 gaussian distributions'''
+#     model = lmfit.models.gaussian2dModel()
+#     params_off = model.guess
+    
+    
+    
 def get_envelope_LPF(x,sig):
 
     N = len(sig)

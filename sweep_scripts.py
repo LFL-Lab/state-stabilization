@@ -528,11 +528,11 @@ iteration_echo_statistics += 1
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 15e-6,
+    'tmax':                 10e-6,
     'dt':                   0.25e-6,
-    'fsAWG':                0.6e9,
+    'fsAWG':                1.2e9,
     'mu':                   0,
-    'sigma':                150e-3,
+    'sigma':                175e-3,
     }
 
 qb.exp_pars = {
@@ -549,12 +549,12 @@ qb.exp_pars = {
 
 
 nReps = 50
-data = np.zeros((nReps,62))
+data = np.zeros((nReps,39))
 for i in range(nReps):
     t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 
-fitted_pars,error = pt.fit_data(x_vector=t,y_vector=np.mean(data,0),exp='T1',dx=t[-1]/nSteps,verbose=0)
-pt.plot_T1_data(t,np.mean(data,0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+fitted_pars,error = pt.fit_data(x_vector=t[1:],y_vector=np.mean(data[:,1:],0),exp='T1',dx=t[-1]/nSteps,verbose=0)
+pt.plot_T1_data(t[1:],np.mean(data[:,1:],0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
 
 # start = time.time()
 # for i in range(nReps):

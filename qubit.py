@@ -104,7 +104,8 @@ class qubit():
             ['/dev8233/awgs/0/outputs/0/modulation/mode', 3], # Output 1 modulated with Sine 1
             ['/dev8233/awgs/0/outputs/1/modulation/mode', 4], # Output 2 modulated with Sine 2
             ['/dev8233/sines/0/phaseshift', 0],   # Sine 1 phase
-            ['/dev8233/sines/1/phaseshift' , 90+self.qb_pars['qb_mixer_imbalance'][1]],   # Sine 2 phase
+            ['/dev8233/sines/1/phaseshift' , 180+self.qb_pars['qb_mixer_imbalance'][1]],   # Sine 2 phase
+            # ['/dev8233/sines/0/phaseshift' , 90],   # Sine 2 phase
             ['/dev8233/triggers/out/0/source', 4] # sets the marker 1 channel output
         ]
         print('Applying initial settings to HDAWG')
@@ -217,16 +218,17 @@ class qubit():
         self.awg.setDouble('/dev8233/sigouts/1/range', 0.6)
 
         
-    def single_shot(self,device_name,qb='',save_data=True):
+    def single_shot(self,theta,device_name,qb='',save_data=True):
         '''
         DESCRIPTION: Executes single shot experiment. This consists of a series of qubit measurements
         following a pi pulse or do-nothing event. The data should look like 2, 2D gaussian distributions
         on the IQ plane.
 
         '''
-        result_length=2*self.exp_pars['num_samples']
+        # result_length=2*self.exp_pars['num_samples']
+        result_length = 2*512
         self.n_steps = result_length
-        theta = self.exp_pars['theta']*pi/180
+        # theta = self.exp_pars['theta']*pi/180
         
         readout_pulse_length = 2.3e-6 + self.qb_pars['cav_resp_time'] + 2e-6
         
@@ -251,10 +253,10 @@ class qubit():
         print('Start measurement')
         bt = time.time()
         self.enable_awg(self.awg,enable=1) # starts the qubit manipulation sequence
-        data = self.acquisition_poll(paths, result_length, timeout = 10*2*self.exp_pars['num_samples']*self.qb_pars['qubit_reset_time']) # transfers data from the QA result to the API
+        data = self.acquisition_poll(paths, result_length, timeout = 10*result_length*self.qb_pars['qubit_reset_time']) # transfers data from the QA result to the API
         et = time.time()
         duration = et-bt
-        print(f'Measurement time: %.1f s'%duration)
+        print(f'Measurement time: {duration:.1f} s')
         
         # seperate OFF/pi data (no averaging)
         data_OFF = np.append(data_OFF, [data[paths[0]][k] for k in utils.even(len(data[paths[0]]))])/4096
@@ -271,10 +273,13 @@ class qubit():
         data['Iexc'] = np.real(data_pi)
         data['Qexc'] = np.imag(data_pi)
         
+        offset_off = np.mean(data['I'])
+        offset_pi = np.mean(data['Iexc'])
+        
         if save_data:
             self.save_data(qb,device_name,data=np.vstack((data_OFF,data_pi)))
             
-        return data
+        return data,offset_off,offset_pi
 
     def rr_spectroscopy(self,freqs,device_name,qb='',save_data=True):
         '''
@@ -466,7 +471,7 @@ class qubit():
         source = 2
 
         # update qubit IF frequency
-        self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']+self.qb_pars['qb_LO'])
         self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
         # if check_mixers:
         
@@ -474,7 +479,6 @@ class qubit():
         self.enable_awg(self.awg,enable=0)
         self.enable_awg(self.qa,enable=0)
         self.qa_result_reset()
-        
 
         # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
         # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
@@ -573,7 +577,7 @@ class qubit():
         '''Runs Rabi with measurement along 3 different tomographic axes'''
         source = 2
         # update qubit IF frequency
-        self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
         self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
         # if check_mixers:
         
@@ -652,9 +656,10 @@ class qubit():
     def coherence_stabilization(self,device_name='',qb='',calibrate=False,verbose=True,save_data = False):
         
         '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
+        
         source = 2
         # update qubit IF frequency
-        self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
         self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
         if calibrate:
             self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True)
@@ -662,7 +667,7 @@ class qubit():
             self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],f_IF=self.qb_pars['qb_IF'],cal='ssb',amp=0.3,threshold=-50,span=0.5e6)
             
             
-        
+        n_avg = self.exp_pars['n_avg']
         # stops AWGs and reset the QA to get rid of errors
         self.enable_awg(self.awg,enable=0)
         self.enable_awg(self.qa,enable=0)
@@ -677,10 +682,11 @@ class qubit():
         self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
         # self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
         # setup QA AWG
+        # self.n_steps += 2
         self.setup_qa_awg(ssb=False) # setup QA AWG for readout
         
         # setup QA Result unit
-        self.config_qa(result_length=self.n_steps,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
+        self.config_qa(result_length=self.n_steps+2,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
         self.qa.sync()
         
         # setup active reset if applicable
@@ -695,7 +701,8 @@ class qubit():
         else:
             timeout = 1.2*exp_dur
 
-        data = np.zeros((3,self.n_steps,self.exp_pars['n_realizations']))
+        data = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
+        v_b = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
         
         with tqdm(total=self.exp_pars['n_realizations']) as pbar:
             for j in range(self.exp_pars['n_realizations']):
@@ -707,7 +714,7 @@ class qubit():
                     self.qa_result_enable() # arm the qa
                     str_meas = time.time()
                     self.enable_awg(self.awg,enable=1) #runs the drive sequence
-                    temp = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 3*timeout) # retrieve data from UHFQA
+                    temp = self.acquisition_poll(paths, num_samples = self.n_steps+2, timeout = 3*timeout) # retrieve data from UHFQA
                     end_meas = time.time()
                     print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
                     for path, samples in temp.items():
@@ -715,9 +722,14 @@ class qubit():
                     # reset QA result unit and stop AWGs
                     self.stop_result_unit(paths)
                     norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-                    data[i,:,j] = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
+                    data[i,:,j] = sweep_data[paths[0]][:]/norm # normalizes the data according to the integration length
                     # self.qa_result_reset()
                     self.enable_awg(self.qa,enable=0) # stops the readout sequence
+                    
+                offset= (data[2,0,j]+data[2,-1,j])/2
+                amp = abs(data[2,0,j]-data[2,-1,j])/2
+                calib_states = self.cal_coord(offset, amp)
+                v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
                 pbar.update(1)
         
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
@@ -735,7 +747,8 @@ class qubit():
         if save_data:
             self.save_data(qb,device_name,data=np.vstack((x_array,results)))
             
-        return wfms,np.mean(results,axis=2),self.n_steps 
+        return wfms,np.mean(results,axis=2),np.mean(v_b,axis=2),calib_states,self.n_steps 
+        #return wfms,results,v_b,self.n_steps 
 
     #%% setup_HDAWG
     def setup_awg(self):
@@ -775,7 +788,7 @@ class qubit():
             
   #%% set up mixer calib         (delete section comment thing later) 
     def setup_mixer_calib(self,inst,amp = 1):
-        self.awg.setInt('/dev8233/awgs/0/time',13) # sets AWG sampling rate to 292 kHz
+        self.awg.setInt('/dev8233/awgs/0/time',0) # sets AWG sampling rate to 292 kHz
         self.sequence = Sequence()
         self.sequence.code = seqs.mixer_calib_sequence()
         self.sequence.constants['amp'] = amp
@@ -1599,11 +1612,11 @@ class qubit():
             instfuncs.set_attenuator(0)
 
             
-        OFF_power = self.get_power(fc=f_LO,threshold=-70,plot=True,span=span)
+        OFF_power = self.get_power(fc=f_LO,threshold=-20,config=True,plot=True,span=span)
         
-        if OFF_power > - 50:
-            span = 30.1e-3
-            dV = 3e-3
+        if OFF_power > - 65:
+            span = 20.1e-3
+            dV = 2e-3
         else:
             span = 2e-3
             dV = 0.2e-3
@@ -1702,23 +1715,30 @@ class qubit():
             device = 'dev2528'
             atten = self.qb_pars['rr_atten']
 
-        if sb == 'lsb':
-            f_im = f_LO - f_IF
-        elif sb == 'usb':
-            f_im = f_LO + f_IF
+        self.awg.setInt('/dev8233/awgs/0/single', 0)
+        # if sb == 'lsb':
+            # f_im = f_LO - f_IF
+        # elif sb == 'usb':
+        f_im = f_LO - f_IF
 
+        # upload and run AWG sequence program
+        self.setup_mixer_calib(inst,amp=amp)
+        # self.update_qb_value('qb_LO', f_LO)
+        self.awg.set('/dev8233/oscs/0/freq',f_IF)
+        self.enable_awg(inst,enable=1)
+        
         OFF_power = self.get_power(fc=f_im,threshold=-20,plot=True,span=span)
         
-        if OFF_power > - 50:
+        if OFF_power > - 60:
             span_amp= 10.001e-1
-            da = 50e-3
-            span_phi = 3.1
-            dp = 0.5
+            da = 10e-2
+            span_phi = 20.1
+            dp = 2
         else:
-            span_amp = 40.001e-3
-            da = 20e-4
-            span_phi = 0.701
-            dp = 0.1
+            span_amp = 80.001e-3
+            da = 40e-4
+            span_phi = 3.01
+            dp = 0.25
 
         threshold = OFF_power + 5  
         print(f'Image Sideband leakage is {OFF_power:.1f} dBm\nSetting SA threshold to {threshold:.1f} dBm')        
@@ -1730,14 +1750,6 @@ class qubit():
         # generate arrays for optimization parameters based on current values of phi and a used
         phiArr = np.arange(p0-span_phi/2,p0+span_phi/2,dp)
         ampArr = np.arange(a0-span_amp/2,a0+span_amp/2,da)
-
-
-        # upload and run AWG sequence program
-        self.setup_mixer_calib(inst,amp=amp)
-        # self.update_qb_value('qb_LO', f_LO)
-        self.awg.set('/dev8233/oscs/0/freq',f_IF)
-        self.enable_awg(inst,enable=1)
-
 
         L1 = len(ampArr)
         L2 = len(phiArr)
@@ -1769,6 +1781,8 @@ class qubit():
         end = time.time()
         print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
 
+        self.awg.setInt('/dev8233/awgs/0/single', 1)
+        
         if plot:
             plot_mixer_opt(ampArr*1e2,phiArr,  power_data,cal='SB',mixer='qubit',fc=f_im)    
 
@@ -1818,17 +1832,12 @@ class qubit():
         
         return data
     
-    def cal_coord(self,data,fitted_pars):
+    def cal_coord(self,offset,amp):
         
-        offset = 1e-3*fitted_pars[-1]
-        amp = 1e-3*fitted_pars[0]
-        
-        # px  =  py = max(data[0,:]) 
         px = py = grn = offset+amp
-        # grn = max(data[2,:])
-        
-        # vpp = abs(max(data[0,:])-min(data[0,:]))
         vpp = 2 * amp
+        
+        print(f'Ground state voltage: {grn*1e3:.1f} mV\nPeak-to-Peak Amplitude: {vpp*1e3:.1f} mV')
         
         return px,py,grn,vpp
             
@@ -1990,19 +1999,33 @@ class qubit():
             list: correction matrix.
 
         """
+        # QM method
         # phi = phi*pi/180
         # c = np.cos(phi)
         # s = np.sin(phi)
         # N = amp / ((1-g**2)*(2*c**2-1))
         # corr = np.array([float(N * x) for x in [(1-g)*c, (1+g)*s, (1-g)*s, (1+g)*c]]).reshape(2,2)
         # # print(corr)
+        # Zurich method
+        # phi = phi*pi/180
+        # c = abs(np.tan(phi))
+        # s = abs(1/(np.cos(phi)*g))
+        # k = 1/(1+c+s) 
+        # corr = np.array([float(x) for x in [k, -k*np.tan(phi), 0, k*1/(np.cos(phi)*g)]]).reshape(2,2)
+        # print(corr)
+        # our Zurich method
+        # phi = phi*pi/180
+        # c = abs(np.tan(phi))
+        # s = abs(1/(np.cos(phi)*g))
+        # k = 1/(1+c+s) 
+        # corr = np.array([float(amp * x) for x in [1, g*np.sin(phi), 0, g*np.cos(phi)]]).reshape(2,2)
 
         # for i in range(2):
         #     for j in range(2):
         #         self.awg.set(f'/dev8233/awgs/0/outputs/{j}/gains/{i}', corr[i,j])
         self.awg.set('/dev8233/awgs/0/outputs/0/gains/0', amp*(1+g/2))
-        self.awg.set('/dev8233/awgs/0/outputs/1/gains/0', -amp*(1-g/2))
-        self.awg.set('/dev8233/sines/1/phaseshift',90+phi)
+        self.awg.set('/dev8233/awgs/0/outputs/1/gains/0', amp*(1-g/2))
+        self.awg.set('/dev8233/sines/1/phaseshift', 180+phi)
         
                 
     def save_data(self,qb,device_name,par_dict={},data=[]):
@@ -2088,7 +2111,7 @@ class qubit():
             instfuncs.set_attenuator(value)
         elif key == 'qb_freq':
             # self.update_qb_value('qb_IF',self.qb_pars['qb_freq']-self.qb_pars['qb_LO'])
-            self.update_qb_value('qb_LO',self.qb_pars['qb_freq']-self.qb_pars['qb_IF'])
+            self.update_qb_value('qb_LO',self.qb_pars['qb_freq']+self.qb_pars['qb_IF'])
             self.awg.set('/dev8233/oscs/0/freq',self.qb_pars['qb_IF'])
         elif key == 'qb_mixer_imbalance':
             self.IQ_imbalance(g=value[0], phi=value[1])

@@ -357,11 +357,13 @@ def tom_calib_plot(x_data,y_data,coords,data='cal'):
     
     if data == 'cal':
         # y_data = y_data*1e3
-        plot_data = normalize_data(y_data)
+       # plot_data = normalize_data(y_data)
+        plot_data = compute_bloch(y_data,calib_pars=coords)
         labels = [r'$\langle X|\psi\rangle$',r'$\langle Y|\psi\rangle$',r'$\langle Z|\psi\rangle$']
     else:
-        for i in range(y_data.shape[1]):
-            plot_data[:,i] = compute_bloch(y_data[:,i],calib_pars=coords) 
+        #for i in range(y_data.shape[1]):
+         #   plot_data[:,i] = compute_bloch(y_data[:,i],calib_pars=coords) 
+        plot_data = compute_bloch(y_data,calib_pars=coords)
         labels = ['$v_x$','$v_y$','$v_z$']
     
     fig, ax = plt.subplots(figsize=(6,4),dpi=150)
@@ -482,7 +484,6 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     #     plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
     labels = ['$v_x$','$v_y$','$v_z$']
 
-    print(coherence.shape)
     # coherence
     axs[0,0].plot(t_data, coherence, '-o', markersize = 3, c='C0')
     axs[0,0].set_ylabel('C(t)')

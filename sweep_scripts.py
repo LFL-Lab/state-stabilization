@@ -5,7 +5,7 @@ Created on Thu May 18 11:46:18 2023
 @author: lfl
 """
 
-atten = np.arange(20,40,1)
+atten = np.arange(10,40,2)
 
 qb.exp_pars = {
     'num_samples':          512,
@@ -43,8 +43,8 @@ for i in pi_amp:
 '''------------------------------------------------------Punchout----------------------------------------------'''
 
 
-freqs = np.arange(start=6.468,stop=6.478,step=200e-6) # frequencies are in GHz
-atten = np.arange(10,35,2.5)
+freqs = np.arange(start=6.703,stop=6.706,step=50e-6) # frequencies are in GHz
+atten = np.arange(0,35,2.5)
 #print(atten)
 p_data = np.zeros((len(atten),len(freqs)))
 
@@ -85,7 +85,7 @@ qb.exp_pars = {
 
 
 
-amp = np.linspace(0,0.501,21)
+amp = np.linspace(0.01,0.501,21)
 Omega_Rabi = []
 data = np.zeros((len(amp),299))
 
@@ -104,24 +104,25 @@ for i in range(len(amp)):
 # data = pd.read_csv("E:\\generalized-markovian-noise\\%s\\Rabi\\RabiPowerSweep\\%s_data_%03d.csv"%(meas_device,'RabiPowerSweep',iteration_rabi_power_sweep),nrows=2,on_bad_lines='skip',skiprows=2,header=None).to_numpy(np.float64)
 # amp = data[0,:]*1e3
 # Omega_Rabi = data[1,:]
+start = 1
 cutoff = 10
-best_vals, covar = scy.optimize.curve_fit(line, amp[0:cutoff],Omega_Rabi[0:cutoff],xtol=1e-6,maxfev=3000)
+best_vals, covar = scy.optimize.curve_fit(line, amp[start:cutoff],Omega_Rabi[start:cutoff],xtol=1e-6,maxfev=3000)
 
 fig, ax1 = plt.subplots(dpi=300)
 # plt.xticks(np.arange(-0.1e3,1.1e3,step=0.2))
 # plt.yticks(np.arange(0,12,step=2))
-left,bottom,width,height = [0.58, 0.25, 0.3, 0.4]
+left,bottom,width,height = [0.5, 0.25, 0.3, 0.4]
 ax2 = fig.add_axes([left,bottom,width,height])
-ax1.plot(amp*1e3,Omega_Rabi, '-o', markersize = 3, c='C0')
+ax1.plot(amp[start:]*1e3,Omega_Rabi[start:], '-o', markersize = 3, c='C0')
 ax1.set_xlabel('Qubit Drive Amplitude (mV)')
-ax1.set_ylabel('$Omega_R$ (MHz)')
-ax2.plot(amp[0:cutoff]*1e3,Omega_Rabi[0:cutoff],amp[0:cutoff]*1e3,line(amp[0:cutoff],best_vals[0],best_vals[1]))
+ax1.set_ylabel('$\Omega_R/2\pi$ (MHz)')
+ax2.plot(amp[start:cutoff]*1e3,Omega_Rabi[start:cutoff],amp[start:cutoff]*1e3,line(amp[start:cutoff],best_vals[0],best_vals[1]))
 ax2.set_xlabel('Qubit Drive Amplitude (mV)',fontsize=9)
-ax2.set_ylabel('$\Omega_R$ (MHz) ',fontsize=10)
+ax2.set_ylabel('$\Omega_R/2\pi$ (MHz) ',fontsize=10)
 # plt.xticks(np.arange(0,amp[35],step=1e-4),fontsize=9)
 # plt.yticks(np.arange(0,np.max(Omega_Rabi),step=2),fontsize=9)
-inset_box_txt = '$f_R=$'+"{:.2e}".format(best_vals[0])+'$\\cdot A_d +$' +"{:.2e}".format(best_vals[1])
-plt.gcf().text(0.58, 0.675, inset_box_txt, fontsize=10)
+inset_box_txt = '$f_R=$'+f"{best_vals[0]:.2e} MHz/V"+'$\\cdot A_d +$' +f"{best_vals[1]:.2e} MHz/V"
+plt.gcf().text(0.45, 0.675, inset_box_txt, fontsize=12)
 plt.show()
 
 
@@ -528,29 +529,30 @@ iteration_echo_statistics += 1
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 10e-6,
-    'dt':                   0.25e-6,
+    'tmax':                 40e-6,
+    'dt':                   0.75e-6,
     'fsAWG':                1.2e9,
     'mu':                   0,
-    'sigma':                175e-3,
+    'sigma':                200e-3,
     }
 
 qb.exp_pars = {
     'exp':                  'T1',
-    'n_avg':                64,
+    'n_avg':                256,
     'x0':                   qb.wfm_pars['t0'],
     'xmax':                 qb.wfm_pars['tmax'],
     'dx':                   qb.wfm_pars['dt'],
     'fsAWG':                qb.wfm_pars['fsAWG'],
-    'active_reset':         False,
+    'active_reset':         True,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
 }
 
-
-nReps = 50
-data = np.zeros((nReps,39))
+timeSteps = round((qb.wfm_pars['tmax']-qb.wfm_pars['t0'])/qb.wfm_pars['dt'])
+nReps = 1000
+data = np.zeros((nReps,timeSteps))
 for i in range(nReps):
+    print('repetition number',i)
     t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
 
 fitted_pars,error = pt.fit_data(x_vector=t[1:],y_vector=np.mean(data[:,1:],0),exp='T1',dx=t[-1]/nSteps,verbose=0)
@@ -583,6 +585,41 @@ pt.plot_T1_data(t[1:],np.mean(data[:,1:],0),fitted_pars,qb=qb_name,exp_pars=qb.e
 # ax.plot(time_arr,T1_arr, '-o', markersize = 3, c='C0')
 # ax.set_xlabel('time (sec)')
 # ax.set_ylabel('$T_1 (\mu s)$')
+
+#%% T2 (noise)
+'''------------------------------------------------------T2 Statistics---------------------------------------------------'''
+'''DESCRIPTION: Repeat T2 Measurement with different noise realizations '''
+
+qb.wfm_pars = {
+    't0':                   0.1e-6,
+    'tmax':                 30e-6,
+    'dt':                   0.3e-6,
+    'fsAWG':                1.2e9,
+    'mu':                   0,
+    'sigma':                171e-3,
+    }
+
+qb.exp_pars = {
+    'exp':                  'ramsey',
+    'n_avg':                128,
+   'x0':                   qb.wfm_pars['t0'],
+   'xmax':                 qb.wfm_pars['tmax'],
+   'dx':                   qb.wfm_pars['dt'],
+   'fsAWG':                qb.wfm_pars['fsAWG'],
+    'amp_q':                0.4,
+    'active_reset':         False,
+    'qubit_drive_freq':     qb.qb_pars['qb_freq'],
+    'tomographic-axis':     'Z',
+}
+
+nReps = 200 
+data = np.zeros((nReps,101))
+for i in range(nReps):
+    t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=False)
+
+fitted_pars,error = pt.fit_data(x_vector=t[1:],y_vector=np.mean(data,0),exp='ramsey',dx=t[-1]/nSteps,verbose=0)
+pt.plot_ramsey_data(t,np.mean(data,0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
+
 
 #%% something else
 '''------------------------------------------------------Measuring the Qubit's Bandwidth via Echo'---------------------------------------------------'''

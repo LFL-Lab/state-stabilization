@@ -145,6 +145,7 @@ def generate_xarray(pars):
 
 def compute_bloch(data,calib_pars):
     '''computes bloch vector components given the calibrated voltages'''
+    #print(data)
     v_b = np.zeros((3,data.shape[1]))
     
     for j in range(data.shape[1]):
@@ -222,9 +223,10 @@ def compute_wfm(time_arr,gamma,plot=True):
     wfm = np.zeros(len(time_arr))
     tb = 1/(4*gamma)
     for i in range(len(time_arr)):
-        value = -gamma/np.sqrt(1 - time_arr[i]/tb)
+        value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
         if math.isnan(value):
             wfm[i:] = 0
+            #wfm[i:] = wfm[i-1]
             break
         else:
             # print(value*1e-6)
@@ -237,7 +239,7 @@ def compute_wfm(time_arr,gamma,plot=True):
         
     return np.array(wfm)
 
-def convert_w_to_v(w,a=21.2,b=0):
+def convert_w_to_v(w,a=7.2488,b=0):
     '''converts input from angular units to amplitude in volts'''
     return (w*1e-6-b)/(2*np.pi*a)
 

@@ -175,7 +175,7 @@ class qubit():
         # self.qasetDouble('/dev2528/triggers/in/0/level', 3)
         # self.qasetDouble('/dev2528/triggers/in/1/level', 3)
         # sets QA result threshold
-        self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.exp_pars['threshold'])
+        self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.qb_pars['threshold'])
         self.qa.sync()
     
     def pulsed_rr_spec_setup(self):
@@ -276,9 +276,15 @@ class qubit():
         offset_off = np.mean(data['I'])
         offset_pi = np.mean(data['Iexc'])
         
+        #print(offset_off,offset_pi)
+        
+        #self.qb_pars['threshold'] = np.mean(np.abs([offset_off,offset_pi]))*4096
+        
         if save_data:
-            self.save_data(qb,device_name,data=np.vstack((data_OFF,data_pi)))
-            
+            filepath = self.create_datafile(qb, device_name)
+            self.save_data(filepath,np.vstack((data_OFF,data_pi)))
+        else:
+            pass   
         return data,offset_off,offset_pi
 
     def rr_spectroscopy(self,freqs,device_name,qb='',save_data=True):
@@ -320,25 +326,7 @@ class qubit():
         with tqdm(total = len(freqs)) as progress_bar:
             for f in freqs:
                 instfuncs.set_LO(self.exp_pars['element'],f*1e9,sweep=True) # updates frequency
-                try:
-                    data = self.acquisition_poll(paths, result_length, timeout = 5) # transfers data from the QA result to the API for this frequency point
-                    # data = self.get_data(wave_data_captured,result_length,timeout=10)
-                    # print(data)
-                except:
-                    print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
-                    
-                    time.sleep(5)
-                    try:
-                        self.qa_result_reset()
-                    except:
-                        print('Lost connection to UHFQA! Attempting to reconnect')
-                        self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
-                        self.qa_ses = self.session.connect_device('DEV2528')
-                    self.enable_awg(inst)
-                    # data = self.get_data(wave_data_captured,result_length,timeout=10)
-                    data = self.acquisition_poll(paths, result_length, timeout = 10)
-                    errors += 1
-                self.qa_result_reset()    
+                data = self.acquire_data(paths, result_length, timeout = 5)
                 # seperate OFF/ON data and average
                 # data = self.sort_data(data)
                 if self.exp_pars['on_off']:
@@ -418,20 +406,7 @@ class qubit():
                 instfuncs.set_LO(self.exp_pars['element'],f*1e9,sweep=True) # updates frequency
                 self.qa_result_reset()
                 self.enable_awg(inst) #runs the drive sequence
-                try:
-                    data = self.acquisition_poll(paths, result_length, timeout = 5) # transfers data from the QA result to the API for this frequency point
-                except:
-                    print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
-                    time.sleep(30)
-                    try:
-                        self.qa_result_reset()
-                    except:
-                        print('Lost connection to UHFQA! Attempting to reconnect')
-                        self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
-                        self.qa_ses = self.session.connect_device('DEV2528')
-                    self.enable_awg(inst)
-                    data = self.acquisition_poll(paths, result_length, timeout = 5)
-                    errors += 1
+                data = self.acquire_data(paths, result_length, timeout = 10)
                 # seperate OFF/ON data and average
                 if self.exp_pars['on_off']:
                     data_OFF = np.append(data_OFF,data[paths[0]][0])
@@ -501,7 +476,7 @@ class qubit():
         
         # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
-            self.setup_active_reset(self.qb_pars['threshold'])
+            self.setup_active_reset()
 
         exp_dur = self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
@@ -517,7 +492,8 @@ class qubit():
 
         str_meas = time.time()
         self.enable_awg(self.awg,enable=1) #runs the drive sequence
-        data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 2*timeout) # retrieve data from UHFQA
+        data = self.acquire_data(paths, self.n_steps, timeout=2*timeout)
+        # data = self.acquisition_poll(paths, num_samples = self.n_steps, timeout = 5*timeout) # retrieve data from UHFQA
 
         for path, samples in data.items():
             sweep_data[path] = np.append(sweep_data[path], samples) 
@@ -546,9 +522,12 @@ class qubit():
             I = data.real
             Q = data.imag
             results = [[I],[Q]]
-
+        
         if save_data:
-            self.save_data(qb,device_name,data=np.vstack((x_array,results)))
+            filepath = self.create_datafile(qb, device_name)
+            self.save_data(filepath,np.vstack((x_array,data)))
+        else:
+            pass
             
         return x_array,results,self.n_steps
         
@@ -603,7 +582,8 @@ class qubit():
         
         # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
-            self.setup_active_reset(self.qb_pars['threshold'])
+            #self.setup_active_reset(self.qb_pars['threshold'])
+            self.setup_active_reset()
 
         exp_dur = 3*self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
@@ -625,7 +605,8 @@ class qubit():
         self.qa_result_enable() # arm the qa
         str_meas = time.time()
         self.enable_awg(self.awg,enable=1) #runs the drive sequence
-        temp = self.acquisition_poll(paths, num_samples = 3*(self.n_steps+1), timeout = 3.5*timeout) # retrieve data from UHFQA
+        #temp = self.acquire_data(paths, num_samples = 3*(self.n_steps+1), timeout = 3.5*timeout) # retrieve data from UHFQA
+        temp = self.acquire_data(paths, result_length = 3*(self.n_steps+1), timeout = 3.5*timeout)
         end_meas = time.time()
         print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
         for path, samples in temp.items():
@@ -691,7 +672,7 @@ class qubit():
         
         # setup active reset if applicable
         if self.exp_pars['active_reset'] == True:
-            self.setup_active_reset(self.qb_pars['threshold'])
+            self.setup_active_reset()
 
         exp_dur = self.calc_timeout()
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
@@ -704,6 +685,11 @@ class qubit():
         data = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
         v_b = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
         
+        if save_data:
+            filepath = self.create_datafile(qb, device_name)
+        else:
+            pass
+        
         with tqdm(total=self.exp_pars['n_realizations']) as pbar:
             for j in range(self.exp_pars['n_realizations']):
                 for i,st in enumerate(['X','Y','Z']):
@@ -714,7 +700,7 @@ class qubit():
                     self.qa_result_enable() # arm the qa
                     str_meas = time.time()
                     self.enable_awg(self.awg,enable=1) #runs the drive sequence
-                    temp = self.acquisition_poll(paths, num_samples = self.n_steps+2, timeout = 3*timeout) # retrieve data from UHFQA
+                    temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10) # retrieve data from UHFQA
                     end_meas = time.time()
                     print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
                     for path, samples in temp.items():
@@ -725,11 +711,17 @@ class qubit():
                     data[i,:,j] = sweep_data[paths[0]][:]/norm # normalizes the data according to the integration length
                     # self.qa_result_reset()
                     self.enable_awg(self.qa,enable=0) # stops the readout sequence
-                    
+                
+                #First point has no state preparation, last point is just a pi pulse, use for calibration
                 offset= (data[2,0,j]+data[2,-1,j])/2
-                amp = abs(data[2,0,j]-data[2,-1,j])/2
+                amp = (data[2,0,j]-data[2,-1,j])/2
                 calib_states = self.cal_coord(offset, amp)
                 v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
+                # self.exp_pars['threshold'] = offset*4096
+                try:
+                    self.save_data(filepath,v_b[:,:,j])
+                except:
+                    pass
                 pbar.update(1)
         
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
@@ -744,10 +736,10 @@ class qubit():
             Q = data.imag
             results = [[I],[Q]]
 
-        if save_data:
-            self.save_data(qb,device_name,data=np.vstack((x_array,results)))
+        # if save_data:
+        #     self.save_data(qb,device_name,data=np.vstack((x_array,v_b)))
             
-        return wfms,np.mean(results,axis=2),np.mean(v_b,axis=2),calib_states,self.n_steps 
+        return wfms,np.mean(results,axis=2),np.mean(v_b,2),calib_states,self.n_steps 
         #return wfms,results,v_b,self.n_steps 
 
     #%% setup_HDAWG
@@ -756,8 +748,9 @@ class qubit():
         # setup frequencies and modulation mode
         #sets the modulation ON or OFF. Should be ON 99% of the time
         if self.qb_pars['qb_IF'] != 0 and self.exp_pars['exp'] != 'spectroscopy':
-            self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
-            self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
+            # self.awg.set('/dev8233/awgs/0/outputs/0/modulation/mode', 3)
+            # self.awg.set('/dev8233/awgs/0/outputs/1/modulation/mode', 4)
+            self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 6)
         else:
             self.awg.set('/dev8233/awgs/0/outputs/*/modulation/mode', 0)
         # adjusts the sampling rate of the AWG
@@ -765,13 +758,18 @@ class qubit():
         # Initialize sequence class
         self.sequence = Sequence()
         # setup sequence code
-        self.sequence.code = seqs.gen_seq_code(self.exp_pars['exp'],self.exp_pars['tomographic-axis'])
+        self.sequence.code = seqs.gen_seq_code(self.exp_pars)
         # setup constants
         seqs.setup_seq_pars(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars,self.n_steps)
+        
+        #if self.exp_pars['exp'] == 'mixer-calibration':
+        #    seqs.setup_seq_pars(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars)
+        #else:
+        #    seqs.setup_seq_pars(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars,self.n_steps)
         # setup waveforms
-        if self.exp_pars['exp'] == 'coherence-stabilization' or self.exp_pars['exp'] == 'T1':
+        if self.exp_pars['exp'] == 'coherence-stabilization' or self.exp_pars['exp'] == 'T1' or self.exp_pars['exp'] == 'ramsey':
             self.sequence = seqs.setup_waveforms(self.sequence,self.wfm_pars,self.exp_pars,self.qb_pars,self.n_points)
-        elif self.exp_pars['exp'] == 'spectroscopy':
+        elif self.exp_pars['exp'] == 'spectroscopy' or self.exp_pars['exp']=='mixer-calibration':
             self.sequence = seqs.setup_waveforms(self.sequence,{},self.exp_pars,self.qb_pars)
         else:
             self.sequence = seqs.setup_waveforms(self.sequence,{},self.exp_pars,self.qb_pars,n_points=self.n_points)
@@ -791,14 +789,13 @@ class qubit():
         self.awg.setInt('/dev8233/awgs/0/time',0) # sets AWG sampling rate to 292 kHz
         self.sequence = Sequence()
         self.sequence.code = seqs.mixer_calib_sequence()
-        self.sequence.constants['amp'] = amp
-        self.sequence.constants['N'] = utils.roundToBase(1024)
-        if inst == self.awg:
-            with self.hdawg_core.set_transaction():
-                    self.hdawg_core.awgs[0].load_sequencer_program(self.sequence)
-        elif inst == self.qa:
-            with self.hdawg_core.set_transaction():
-                self.qa_ses.awgs[0].load_sequencer_program(self.sequence)
+        self.setup_awg()
+        # if inst == self.awg:
+        #     with self.hdawg_core.set_transaction():
+        #             self.hdawg_core.awgs[0].load_sequencer_program(self.sequence)
+        # elif inst == self.qa:
+        #     with self.hdawg_core.set_transaction():
+        #         self.qa_ses.awgs[0].load_sequencer_program(self.sequence)
             
         
     #%% setup_QA
@@ -974,6 +971,7 @@ class qubit():
         self.qa.setInt('/dev2528/qas/0/result/averages', self.exp_pars['n_avg'])
         self.qa.setInt('/dev2528/qas/0/monitor/length', L)
         self.qa.setComplex('/dev2528/qas/0/rotations/0', np.exp(1j*self.qb_pars['IQ_rotation']*pi/180))
+        
         # configure triggering (0=trigger input 1 7 for internal trigger)
 
         # QA Result Settings
@@ -1716,11 +1714,16 @@ class qubit():
             atten = self.qb_pars['rr_atten']
 
         self.awg.setInt('/dev8233/awgs/0/single', 0)
-        # if sb == 'lsb':
-            # f_im = f_LO - f_IF
-        # elif sb == 'usb':
         f_im = f_LO - f_IF
 
+        self.exp_pars = {
+            'exp':      'mixer-calibration',
+            'amp':      amp,
+            'fsAWG':    2.4e9,
+            'tomographic-axis': 'Z',
+            'active_reset':     False,
+            }
+        
         # upload and run AWG sequence program
         self.setup_mixer_calib(inst,amp=amp)
         # self.update_qb_value('qb_LO', f_LO)
@@ -1729,16 +1732,21 @@ class qubit():
         
         OFF_power = self.get_power(fc=f_im,threshold=-20,plot=True,span=span)
         
-        if OFF_power > - 60:
-            span_amp= 10.001e-1
-            da = 10e-2
-            span_phi = 20.1
-            dp = 2
+        if OFF_power > -30:
+            span_amp = 4.0001
+            da = 0.25
+            span_phi = 100.1
+            dp = 10        
+        elif OFF_power > - 60:
+            span_amp= 2
+            da = 0.1
+            span_phi = 30.1
+            dp = 3
         else:
-            span_amp = 80.001e-3
-            da = 40e-4
-            span_phi = 3.01
-            dp = 0.25
+            span_amp = 1.2
+            da = 0.02
+            span_phi = 5.01
+            dp = 0.5
 
         threshold = OFF_power + 5  
         print(f'Image Sideband leakage is {OFF_power:.1f} dBm\nSetting SA threshold to {threshold:.1f} dBm')        
@@ -1749,7 +1757,8 @@ class qubit():
         p0 = self.qb_pars['qb_mixer_imbalance'][1]
         # generate arrays for optimization parameters based on current values of phi and a used
         phiArr = np.arange(p0-span_phi/2,p0+span_phi/2,dp)
-        ampArr = np.arange(a0-span_amp/2,a0+span_amp/2,da)
+        #ampArr = np.arange(a0-span_amp/2,a0+span_amp/2,da)
+        ampArr = np.arange(1/span_amp,span_amp,da)*a0
 
         L1 = len(ampArr)
         L2 = len(phiArr)
@@ -1776,7 +1785,8 @@ class qubit():
         self.IQ_imbalance(g=opt_amp, phi=opt_phi)
         self.update_qb_value('qb_mixer_imbalance', [opt_amp,opt_phi])
         inst.sync()
-        print(f'g = {round(opt_amp*1e2,1)}, phi = {round(opt_phi,3)}')
+        #print(f'g = {round(opt_amp,1)}, phi = {round(opt_phi*180/np.pi,3)} deg')
+        print(f'g = {round(opt_amp,1)}, phi = {round(opt_phi,3)} deg')
 
         end = time.time()
         print('%s mixer Optimization took %.1f seconds'%(mixer,(end-start)))
@@ -1784,7 +1794,7 @@ class qubit():
         self.awg.setInt('/dev8233/awgs/0/single', 1)
         
         if plot:
-            plot_mixer_opt(ampArr*1e2,phiArr,  power_data,cal='SB',mixer='qubit',fc=f_im)    
+            plot_mixer_opt(ampArr,phiArr,  power_data,cal='SB',mixer='qubit',fc=f_im)    
 
     #%% optimize readout functions
     # def optimize_atten(self,x0,xmax)
@@ -1856,6 +1866,32 @@ class qubit():
         elif inst == self.qa:
             #print('enabling qa awg...')
             inst.syncSetInt('/dev2528/awgs/0/enable', enable)
+            
+    def acquire_data(self,paths,result_length,timeout):
+        '''acquires data and handles instrument communication errors'''
+        try:
+            data = self.acquisition_poll(paths, result_length, timeout) # transfers data from the QA result to the API for this frequency point
+            # data = self.get_data(wave_data_captured,result_length,timeout=10)
+            # print(data)
+        except:
+            print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
+            
+            time.sleep(5)
+            try:
+                self.qa_result_reset()
+            except:
+                print('Lost connection to UHFQA! Attempting to reconnect')
+                self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
+                self.qa_ses = self.session.connect_device('DEV2528')
+                self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
+                self.hdawg_core = self.session.connect_device('DEV8233')
+                
+            self.enable_awg(self.awg)
+            # data = self.get_data(wave_data_captured,result_length,timeout=10)
+            data = self.acquisition_poll(paths, result_length, timeout)
+        self.qa_result_reset()  
+        
+        return data
         
     def upload_to_awg(self,ct):
         '''uploads sequence file, waveforms, and command table to awg'''
@@ -1880,16 +1916,19 @@ class qubit():
         x_array = []
         ct = self.hdawg_core.awgs[0].commandtable.load_from_device()
         
-        for i in range(self.n_steps):
-            if self.exp_pars['exp'] == 'p-rabi':
-                value = ct.table[i].amplitude0.value
-                x_array.append(value)
-            elif self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
-                value = ct.table[i].waveform.length
-                x_array.append(int(value))
+        if self.exp_pars['exp'] == 'calibrate-rabi':
+            x_array = np.linspace(0,self.n_steps,self.n_steps,dtype = int)
+        else:
+            for i in range(self.n_steps):
+                if self.exp_pars['exp'] == 'p-rabi':
+                    value = ct.table[i].amplitude0.value
+                    x_array.append(value)
+                elif self.exp_pars['exp'] != 'p-rabi' and self.exp_pars['exp'] != 'z-gate':
+                    value = ct.table[i].waveform.length
+                    x_array.append(int(value))
                 if i == self.n_steps-1 and (self.exp_pars['exp'] == 't-rabi' or self.exp_pars['exp'] == 'tomography-calibration'):
                     x_array.insert(0, 0)
-            
+                
         return np.array(x_array)
     
     def get_wfms(self):
@@ -1986,7 +2025,7 @@ class qubit():
     #         raise Exception("Upload to the instrument failed.")
 
 
-    def IQ_imbalance(self,g,phi,amp=0.95):
+    def IQ_imbalance(self,g,phi,amp=1):
         """
         Applies amplitude and phase correction to the AWG
 
@@ -2014,21 +2053,25 @@ class qubit():
         # corr = np.array([float(x) for x in [k, -k*np.tan(phi), 0, k*1/(np.cos(phi)*g)]]).reshape(2,2)
         # print(corr)
         # our Zurich method
-        # phi = phi*pi/180
-        # c = abs(np.tan(phi))
-        # s = abs(1/(np.cos(phi)*g))
-        # k = 1/(1+c+s) 
-        # corr = np.array([float(amp * x) for x in [1, g*np.sin(phi), 0, g*np.cos(phi)]]).reshape(2,2)
+        phi = phi*pi/180
+        c = abs(np.tan(phi))
+        s = abs(1/(np.cos(phi)*g))
+        k = 1/(1+c+s) 
+        if np.abs(g*amp*np.sin(phi)) > 1 or np.abs(g*amp*np.cos(phi)) > 1:
+            corr = np.array([float(amp * x) for x in [1/g, 0, np.sin(phi), -np.cos(phi)]]).reshape(2,2)
+        else:
+            corr = np.array([float(amp * x) for x in [1, 0, g*np.sin(phi), -g*np.cos(phi)]]).reshape(2,2)
 
-        # for i in range(2):
-        #     for j in range(2):
-        #         self.awg.set(f'/dev8233/awgs/0/outputs/{j}/gains/{i}', corr[i,j])
-        self.awg.set('/dev8233/awgs/0/outputs/0/gains/0', amp*(1+g/2))
-        self.awg.set('/dev8233/awgs/0/outputs/1/gains/0', amp*(1-g/2))
-        self.awg.set('/dev8233/sines/1/phaseshift', 180+phi)
+        for i in range(2):
+            for j in range(2):
+                self.awg.set(f'/dev8233/awgs/0/outputs/{j}/gains/{i}', corr[i,j])
+                
+        # self.awg.set('/dev8233/awgs/0/outputs/0/gains/0', amp*(1+g/2))
+        # self.awg.set('/dev8233/awgs/0/outputs/1/gains/0', amp*(1-g/2))
+        # self.awg.set('/dev8233/sines/1/phaseshift', 180+phi)
         
                 
-    def save_data(self,qb,device_name,par_dict={},data=[]):
+    def create_datafile(self,qb,device_name):
         '''Saves data to the appropriate folder'''
         dir_path = f'D:\\coherence-stabilization\\{device_name}\\{qb}\\{self.exp_pars["exp"]}-data'
 
@@ -2048,14 +2091,30 @@ class qubit():
             filename = f'\\{self.exp_pars["exp"]}'+f'{self.exp_pars["element"]}_data_{self.iteration}.csv'
         else:
             filename = f'\\{self.exp_pars["exp"]}'+f'_data_{self.iteration}.csv'
+            
         with open(dir_path+filename,"w",newline="") as datafile:
             writer = csv.writer(datafile)
             writer.writerow(self.qb_pars.keys())
             writer.writerow(self.qb_pars.values())
             writer.writerow(self.exp_pars.keys())
             writer.writerow(self.exp_pars.values())
+            
+        return dir_path+filename
+            
+    def save_data(self,filepath,data):
+        
+        # if self.exp_pars['exp'] == 'coherence-stabilization':
+        with open(filepath,"a",newline="") as datafile:
+            writer = csv.writer(datafile)
+            
             for i in range(data.shape[0]):
-                writer.writerow(data[i][:])
+                writer.writerow(data[i,:])
+    # else:
+        #     with open(filepath,"w",newline="") as datafile:
+        #         writer = csv.writer(datafile)
+                
+        #         for i in range(data.shape[0]):
+        #             writer.writerow(dat[:])
     
     # def calc_steps(self,verbose=1):
     #     """
@@ -2111,7 +2170,7 @@ class qubit():
             instfuncs.set_attenuator(value)
         elif key == 'qb_freq':
             # self.update_qb_value('qb_IF',self.qb_pars['qb_freq']-self.qb_pars['qb_LO'])
-            self.update_qb_value('qb_LO',self.qb_pars['qb_freq']+self.qb_pars['qb_IF'])
+            self.update_qb_value('qb_LO',self.qb_pars['qb_freq']-self.qb_pars['qb_IF'])
             self.awg.set('/dev8233/oscs/0/freq',self.qb_pars['qb_IF'])
         elif key == 'qb_mixer_imbalance':
             self.IQ_imbalance(g=value[0], phi=value[1])

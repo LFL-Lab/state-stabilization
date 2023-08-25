@@ -21,11 +21,12 @@ from zhinst.toolkit import Session,CommandTable,Sequence,Waveforms
 from zhinst.toolkit.waveform import Wave, OutputType
 import utilities as utils #odd,even,roundToBase,gen_arb_wfm
 from scipy.signal.windows import gaussian
-from plotting import plot_mixer_opt
+from plotting import plot_mixer_opt, power_plot
 from scipy.optimize import minimize
 import re
 import scipy.optimize as opt
-from plotting import power_plot
+#from plotting import power_plot
+import matplotlib.pyplot as plt
 
 pi=np.pi        
 
@@ -594,7 +595,7 @@ class qubit():
             timeout = 1.2*exp_dur
 
         data = np.zeros((3,self.n_steps+1))
-        self.exp_pars['initial-state'] = '0'
+        self.exp_pars['initial-state'] = (0,0)
         
         # for i,st in enumerate(['X','Y','Z']):
             
@@ -678,6 +679,117 @@ class qubit():
         print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
 
         if self.exp_pars['active_reset'] == True:
+            timeout =1.2*exp_dur
+        else:
+            timeout = 1.2*exp_dur
+
+        data = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
+        v_b = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
+        
+        if save_data:
+            filepath = self.create_datafile(qb, device_name)
+        else:
+            pass
+        
+        with tqdm(total=self.exp_pars['n_realizations']) as pbar:
+            for j in range(self.exp_pars['n_realizations']):
+                for i,st in enumerate(['X','Y','Z']):
+                    self.exp_pars['tomographic-axis'] = st
+                    self.setup_awg()
+                    self.enable_awg(self.qa,enable=1) # start the readout sequence
+                    sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
+                    self.qa_result_enable() # arm the qa
+                    str_meas = time.time()
+                    self.enable_awg(self.awg,enable=1) #runs the drive sequence
+                    temp = self.acquire_data(paths, self.n_steps+2, timeout =timeout) 
+                    #temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10)# retrieve data from UHFQA
+                    end_meas = time.time()
+                    print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+                    for path, samples in temp.items():
+                        sweep_data[path] = np.append(sweep_data[path], samples) 
+                    # reset QA result unit and stop AWGs
+                    self.stop_result_unit(paths)
+                    norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
+                    data[i,:,j] = sweep_data[paths[0]][:]/norm # normalizes the data according to the integration length
+                    # self.qa_result_reset()
+                    self.enable_awg(self.qa,enable=0) # stops the readout sequence
+                
+                #First point has no state preparation, last point is just a pi pulse, use for calibration
+                offset= (data[2,0,j]+data[2,-1,j])/2
+                amp = (data[2,0,j]-data[2,-1,j])/2
+                calib_states = self.cal_coord(offset, amp)
+                v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
+                self.exp_pars['threshold'] = offset*4096
+                self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.qb_pars['threshold'])
+                try:
+                    self.save_data(filepath,v_b[:,:,j])
+                except:
+                    pass
+                pbar.update(1)
+        
+        # retrieves swept variable values from command table. This ensures that the final plot showcases the
+        # correct values for the x-axis
+        x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
+        wfms = self.get_wfms() # get wfms from AWG
+        
+        if source == 2 or source == 1:
+            results = data
+        elif source == 7:
+            I = data.real
+            Q = data.imag
+            results = [[I],[Q]]
+
+        # if save_data:
+        #     self.save_data(qb,device_name,data=np.vstack((x_array,v_b)))
+            
+        return wfms,np.mean(results,axis=2),np.mean(v_b,2),calib_states,self.n_steps 
+        #return wfms,results,v_b,self.n_steps 
+
+    def coherence_stabilization_threshold(self,device_name='',qb='',calibrate=False,verbose=True,save_data = False):
+        
+        '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
+        
+        source = 2
+        # update qubit IF frequency
+        # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
+        if calibrate:
+            self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True)
+            self.min_leak(inst=self.qa,f_LO=self.qb_pars['rr_LO'],mixer='rr',cal='lo',plot=True)
+            self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],f_IF=self.qb_pars['qb_IF'],cal='ssb',amp=0.3,threshold=-50,span=0.5e6)
+            
+            
+        n_avg = self.exp_pars['n_avg']
+        # stops AWGs and reset the QA to get rid of errors
+        self.enable_awg(self.awg,enable=0)
+        self.enable_awg(self.qa,enable=0)
+        self.qa_result_reset()
+        # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
+        # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
+        # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
+        # requirement of the AWG is satisfied.
+        self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.wfm_pars,verbose)
+        self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
+        self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
+        self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
+        # self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
+        # setup QA AWG
+        # self.n_steps += 2
+        self.setup_qa_awg(ssb=False) # setup QA AWG for readout
+        
+        # setup QA Result unit
+        self.config_qa(result_length=self.n_steps+2,source=1,ssb=False) # threshold mode
+        #self.config_qa(result_length=self.n_steps+2,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
+        self.qa.sync()
+        
+        # setup active reset if applicable
+        if self.exp_pars['active_reset'] == True:
+            self.setup_active_reset()
+
+        exp_dur = self.calc_timeout()
+        print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
+
+        if self.exp_pars['active_reset'] == True:
             timeout = 0.2*1.2*exp_dur
         else:
             timeout = 1.2*exp_dur
@@ -700,7 +812,8 @@ class qubit():
                     self.qa_result_enable() # arm the qa
                     str_meas = time.time()
                     self.enable_awg(self.awg,enable=1) #runs the drive sequence
-                    temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10) # retrieve data from UHFQA
+                    temp = self.acquire_data(paths, self.n_steps+2, timeout =30) 
+                    #temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10)# retrieve data from UHFQA
                     end_meas = time.time()
                     print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
                     for path, samples in temp.items():
@@ -717,7 +830,9 @@ class qubit():
                 amp = (data[2,0,j]-data[2,-1,j])/2
                 calib_states = self.cal_coord(offset, amp)
                 v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
-                # self.exp_pars['threshold'] = offset*4096
+                #v_b[:,:,j] = np.floor(np.abs(data[:,:,j])/np.abs(offset))
+                self.exp_pars['threshold'] = offset*4096
+                self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.qb_pars['threshold'])
                 try:
                     self.save_data(filepath,v_b[:,:,j])
                 except:
@@ -1740,13 +1855,13 @@ class qubit():
         elif OFF_power > - 60:
             span_amp= 2
             da = 0.1
-            span_phi = 30.1
-            dp = 3
+            span_phi = 20.1
+            dp = 2
         else:
             span_amp = 1.2
             da = 0.02
-            span_phi = 5.01
-            dp = 0.5
+            span_phi = 4.01
+            dp = 0.25
 
         threshold = OFF_power + 5  
         print(f'Image Sideband leakage is {OFF_power:.1f} dBm\nSetting SA threshold to {threshold:.1f} dBm')        
@@ -1867,32 +1982,63 @@ class qubit():
             #print('enabling qa awg...')
             inst.syncSetInt('/dev2528/awgs/0/enable', enable)
             
+    # def acquire_data(self,paths,result_length,timeout):
+    #     '''acquires data and handles instrument communication errors'''
+    #     try:
+    #         data = self.acquisition_poll(paths, result_length, timeout) # transfers data from the QA result to the API for this frequency point
+    #         # data = self.get_data(wave_data_captured,result_length,timeout=10)
+    #         # print(data)
+    #     except:
+    #         print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
+            
+    #         time.sleep(5)
+    #         try:
+    #             self.qa_result_reset()
+    #         except:
+    #             print('Lost connection to UHFQA! Attempting to reconnect')
+    #             self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
+    #             self.qa_ses = self.session.connect_device('DEV2528')
+    #             self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
+    #             self.hdawg_core = self.session.connect_device('DEV8233')
+                
+    #         self.enable_awg(self.awg)
+    #         # data = self.get_data(wave_data_captured,result_length,timeout=10)
+    #         data = self.acquisition_poll(paths, result_length, timeout)
+    #     self.qa_result_reset()  
+        
+    #     return data
+ 
     def acquire_data(self,paths,result_length,timeout):
         '''acquires data and handles instrument communication errors'''
-        try:
-            data = self.acquisition_poll(paths, result_length, timeout) # transfers data from the QA result to the API for this frequency point
-            # data = self.get_data(wave_data_captured,result_length,timeout=10)
-            # print(data)
-        except:
-            print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
-            
-            time.sleep(5)
+        kk = 1
+        while kk < 101:
             try:
-                self.qa_result_reset()
+                data = self.acquisition_poll(paths, result_length, timeout) # transfers data from the QA result to the API for this frequency point
+                # data = self.get_data(wave_data_captured,result_length,timeout=10)
+                # print(data)
+                break
             except:
-                print('Lost connection to UHFQA! Attempting to reconnect')
-                self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
-                self.qa_ses = self.session.connect_device('DEV2528')
-                self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
-                self.hdawg_core = self.session.connect_device('DEV8233')
+                print('Error! Unable to retrieve data from Quantum Analyzer. Trying again. Might have to restart QA')
                 
-            self.enable_awg(self.awg)
-            # data = self.get_data(wave_data_captured,result_length,timeout=10)
-            data = self.acquisition_poll(paths, result_length, timeout)
-        self.qa_result_reset()  
-        
-        return data
-        
+                time.sleep(5)
+                try:
+                    self.qa_result_reset()
+                    
+                except:
+                    print('Lost connection to UHFQA! Attempting to reconnect')
+                    self.qa,device_id,_ = create_api_session('dev2528',api_level=6)
+                    self.qa_ses = self.session.connect_device('DEV2528')
+                    self.awg,device_id,_ = create_api_session('dev8233',api_level=6)
+                    self.hdawg_core = self.session.connect_device('DEV8233')
+                    self.qa_result_reset() 
+                    
+                self.enable_awg(self.awg)
+                # data = self.get_data(wave_data_captured,result_length,timeout=10)
+                #data = self.acquisition_poll(paths, result_length, timeout)
+            #self.qa_result_reset()  
+            kk +=1
+            print('trying again, iteration',kk)
+        return data       
     def upload_to_awg(self,ct):
         '''uploads sequence file, waveforms, and command table to awg'''
         
@@ -2074,7 +2220,7 @@ class qubit():
     def create_datafile(self,qb,device_name):
         '''Saves data to the appropriate folder'''
         dir_path = f'D:\\coherence-stabilization\\{device_name}\\{qb}\\{self.exp_pars["exp"]}-data'
-
+        
         if os.path.exists(dir_path):
             pass
         else:
@@ -2083,9 +2229,12 @@ class qubit():
             
         try:
             latest_file = max(glob.glob(os.path.join(dir_path, '*.csv')), key=os.path.getmtime)
-            self.iteration = int(re.findall(r'\d+', latest_file)[1]) + 1
+            #print('latest file is:',latest_file)
+            #self.iteration = int(re.findall(r'\d+', latest_file)[1]) + 1
+            self.iteration = self.iteration + 1            
         except:
             self.iteration = 1
+           
         
         if self.exp_pars['exp'] =='spectroscopy':
             filename = f'\\{self.exp_pars["exp"]}'+f'{self.exp_pars["element"]}_data_{self.iteration}.csv'
@@ -2150,6 +2299,75 @@ class qubit():
     #         raise Exception('Error: The maximum number of steps is 1024')
 
     #     return n_points,n_steps,t0,tmax,dt
+    def retrieve_datafile(self, filepath):
+        n_rows=0
+#f = os.open("D://coherence-stabilization//WM1//qb6//coherence-stabilization-data//coherence-stabilization_data_7.csv",os.O_RDONLY)
+        f = open(filepath)
+
+        with open(filepath, newline = '') as csvfile:
+            reader = csv.reader(csvfile)
+            for ii in range(0,4):
+                next(reader)
+    
+    #size = len(reader)
+
+            for row in reader:
+                if n_rows == 0:
+                    n_columns = np.size(row)
+                n_rows+=1
+    
+    
+       
+        v_b = np.zeros([n_rows,n_columns])
+
+        f.seek(0)    
+        j = 0
+
+        with open("D://coherence-stabilization//WM1//qb6//coherence-stabilization-data//coherence-stabilization_data_7.csv", newline = '') as csvfile:
+            reader = csv.reader(csvfile)
+            for ii in range(0,4):
+                next(reader)
+    
+            #size = len(reader)
+
+            for row in reader:
+                v_b[j,:] = row
+                j+=1
+
+    
+        return v_b
+    
+    def plot_coherence_file_data(self,v_b,wfm_pars):
+        '''plots recovered data specific from coherence stabilization measurements'''
+        vb_size = np.shape(v_b)
+
+        nrows = vb_size[0]
+        ncol = vb_size[1]
+        v_b_x = np.zeros([int(nrows/3),ncol])
+        v_b_y = np.zeros([int(nrows/3),ncol])
+        v_b_z = np.zeros([int(nrows/3),ncol])
+        vx =np.zeros(ncol)
+        vy =np.zeros(ncol)
+        vz =np.zeros(ncol)
+        for ii in range(0,len(v_b),3):
+    
+            v_b_x[int(ii/3),:] = v_b[ii]
+            v_b_y[int(ii/3),:] = v_b[ii+1]
+            v_b_z[int(ii/3),:] = v_b[ii+2]
+         
+    
+        for jj in range(ncol):
+
+            vx[jj] = np.mean(v_b_x[:,jj])
+            vy[jj] = np.mean(v_b_y[:,jj])
+            vz[jj] = np.mean(v_b_z[:,jj])
+        
+        t = np.linspace(self.wfm_pars['x0'],self.wfm_pars['xmax'],ncol-2)
+        
+        plt.plot(t,vx[1:-1])
+        plt.plot(t,vy[1:-1])
+        plt.plot(t,vz[1:-1])
+
     
     def update_qb_value(self,key,value):
         '''Updates qubit dictionary value and writes new dictionary to json file'''

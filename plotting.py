@@ -480,19 +480,23 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     purity = compute_purity(v_b, calib_states)
     # wfms = data[4]
     plot_data = v_b
+    polar = exp_pars['initial-state'][1]
+    azimuth =  exp_pars['initial-state'][0]
     # for i in range(v_b.shape[1]):
     #     plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
     labels = ['$v_x$','$v_y$','$v_z$']
-
+    t2_2 = wfm_pars['T2']*1e6 / 2
     # coherence
     axs[0,0].plot(t_data, coherence, '-o', markersize = 3, c='C0')
     axs[0,0].set_ylabel('C(t)')
     axs[0,0].set_xlabel('Drive Duration ($\mu$s)')
+    axs[0,0].axvline(x = t2_2,c= 'k',ls = '--')
     # purity
     axs[1,0].plot(t_data, purity, '-o', markersize = 3, c='C0')
     axs[1,0].set_ylabel(r'Tr[$\rho^2$(t)]')
     axs[1,0].set_xlabel('Drive Duration ($\mu$s)')
     axs[1,0].set_ylim([0,1.2])
+    axs[1,0].axvline(x = t2_2,c= 'k',ls = '--')
     # bloch vector components
     axs[0,1].plot(t_data,plot_data[0,:],'-o',color='b',label=labels[0])
     axs[0,1].plot(t_data,plot_data[1,:],'-x',color='r',label=labels[1])
@@ -500,15 +504,18 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
     axs[0,1].legend()
     axs[0,1].set_ylim([-1.0,1.0])
+    axs[0,1].axvline(x = t2_2,c= 'k',ls = '--')
     # # sx, sy waveforms
     axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)
     axs[1,1].plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
     
     axs[1,1].set_ylabel('A(t)')
     axs[1,1].set_xlabel('Drive Duration ($\mu$s)')
+    axs[1,1].axvline(x = t2_2,c= 'k',ls = '--')
     axs[1,1].legend()
     # # ax.set_title(f'Rabi Measurement {iteration:03d}')
-    textstr = f'Initial State: {exp_pars["initial-state"]}'+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.1f}'+r'$\mu$s'
+    
+    textstr = f'Polar Angle: {polar}$\pi$'+f'\n Azimuthal Angle: {azimuth}$\pi$ '+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.1f}'+r'$\mu$s'
     # plt.tight_layout()
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
 

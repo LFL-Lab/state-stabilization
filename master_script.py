@@ -94,7 +94,7 @@ qb.exp_pars = {
     'xmax':                 0.3,
     'dx':                   10e-3,
     'fsAWG':                2.4e9,
-    'active_reset':         True,
+    'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq'],
     'tomographic-axis':     'Z',
     }
@@ -264,19 +264,19 @@ pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_states)
 
 qb.wfm_pars = {
     'x0':                   0.05e-6,
-    'xmax':                 7e-6,
-    'dx':                   0.075e-6,
+    'xmax':                 10e-6,
+    'dx':                   0.04e-6,
     'fsAWG':                1.2e9,
     'mu':                   0,
-    'sigma':                200e-3,
-    'T2':                   6.4e-6,         
+    'sigma':                250e-3,
+    'T2':                   4e-6,         
     }
 
 qb.exp_pars = {
     'exp':                  'coherence-stabilization',
-    'initial-state':        '7',
-    'n_avg':                256,
-    'n_realizations':       800,
+    'initial-state':        (1/2,1/4),  # in units of pi
+    'n_avg':                512,
+    'n_realizations':       500,
     'x0':                   qb.wfm_pars['x0'],
     'xmax':                 qb.wfm_pars['xmax'],
     'dx':                   qb.wfm_pars['dx'],
@@ -285,8 +285,8 @@ qb.exp_pars = {
     'active_reset':         True,
     'qubit_drive_freq':     qb.qb_pars['qb_freq'],
 }
-
 wfms,data,v_b,calib_states,nSteps = qb.coherence_stabilization(qb=qb_name,device_name=device_name,verbose=1,save_data=True)
+#wfms,data,v_b,calib_states,nSteps = qb.coherence_stabilization_threshold(qb=qb_name,device_name=device_name,verbose=1,save_data=True)
 t = np.linspace(qb.wfm_pars['x0'],qb.wfm_pars['xmax'],data.shape[1]-2)
 # fit & plot data
 # v0 = compute_bloch(data[:,0], calib_states)

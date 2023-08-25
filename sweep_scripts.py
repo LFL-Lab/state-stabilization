@@ -68,11 +68,11 @@ df = pt.heatplot(xdata=np.around(freqs,6),ydata=atten,z_data = p_data*1e3,xlabel
 
 #%% rabi amplitude sweep
 '''------------------------------------------------------Sweep Rabi Amplitude----------------------------------------------'''
-
+detuning = 0
 qb.exp_pars = {
     'initial-state':        '0',
     'exp':                  't-rabi',
-    'n_avg':                128,
+    'n_avg':                1024,
     'x0':                   13e-9,
     'xmax':                 2e-6,
     'dx':                   6e-9,

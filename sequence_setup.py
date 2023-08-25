@@ -391,6 +391,7 @@ def state_stabilization_sequence():
     var i;
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
+        wait(100000);
         _trigger_readout_ // t = 0 measurement
         _qubit_reset_
         for (i=0; i<n_steps; i++) {
@@ -400,6 +401,7 @@ def state_stabilization_sequence():
                 _trigger_readout_
                 _qubit_reset_
                 }
+            wait(100000);
                 executeTableEntry(n_steps+2); //do pi pulse
                 _trigger_readout_
                 _qubit_reset_  
@@ -454,7 +456,7 @@ def qubit_reset_sequence():
             executeTableEntry(1023);
             wait(100);
             }
-        wait(20000);
+        wait(60000);
       '''
      
     return awg_program
@@ -996,7 +998,7 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         
     if exp == 'coherence-stabilization':
         wfm_index = 0
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps)
         ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
         ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
@@ -1004,7 +1006,7 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         
     elif exp == 't-rabi':
         wfm_index = 3
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
         wfm_index = 0 # gauss rise
         ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0)
@@ -1019,10 +1021,10 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,0,n_steps)
         wfm_index = 3
         exp_pars['tomographic-axis'] = 'X'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+3,wfm_index,amp_tom,base_theta,theta_tom) # X tomography pulse
         exp_pars['tomographic-axis'] = 'Y'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+4,wfm_index,amp_tom,base_theta,theta_tom) # Y tomography pulse
         ct = arb_pulse(ct,n_steps+5,wfm_index,0,base_theta,0) # Z tomography pulse
     elif exp == 'T1':
@@ -1220,4 +1222,42 @@ def determine_axes(exp_pars,qb_pars):
     amp_prep = amp_prep*base_amp
     amp_tom = amp_tom*base_amp
     
+    return theta_prep,theta_tom,amp_prep,amp_tom
+
+
+def determine_axes_new(exp_pars,qb_pars):
+    print(f"Preparing {exp_pars['initial-state']} state")
+    print(f"Measuring along {exp_pars['tomographic-axis']} axis")
+    
+    base_amp = qb_pars['pi_amp']
+    
+    # In units of pi
+    start_axis = exp_pars['initial-state'][0]
+    rot_axis = exp_pars['initial-state'][1]
+    
+    # Convert starting axis to degrees to match tomographic axis:
+    theta_prep = start_axis * 180
+
+    
+    if exp_pars['tomographic-axis'] == 'X':
+        #theta_prep = 90
+        theta_tom = 180
+        #amp_prep = 0.25
+        amp_tom = 0.5
+    elif exp_pars['tomographic-axis'] == 'Y':
+        #theta_prep = 90
+        theta_tom = -90
+        #amp_prep = 0.25
+        amp_tom = 0.5
+    elif exp_pars['tomographic-axis'] == 'Z':
+        #theta_prep = 90
+        theta_tom = 0
+        #amp_prep = 0.25
+        amp_tom = 0
+    
+    # Pulse amplitude for preparation and for tomography
+    amp_prep = rot_axis*base_amp
+    amp_tom = amp_tom*base_amp
+    
+    #print(theta_prep,theta_tom,amp_prep,amp_tom)
     return theta_prep,theta_tom,amp_prep,amp_tom

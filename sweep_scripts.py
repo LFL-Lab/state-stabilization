@@ -529,16 +529,16 @@ iteration_echo_statistics += 1
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 40e-6,
-    'dt':                   0.75e-6,
+    'tmax':                 30e-6,
+    'dt':                   1.5e-6,
     'fsAWG':                1.2e9,
     'mu':                   0,
-    'sigma':                200e-3,
+    'sigma':                250e-3,
     }
 
 qb.exp_pars = {
     'exp':                  'T1',
-    'n_avg':                256,
+    'n_avg':                512,
     'x0':                   qb.wfm_pars['t0'],
     'xmax':                 qb.wfm_pars['tmax'],
     'dx':                   qb.wfm_pars['dt'],
@@ -549,7 +549,7 @@ qb.exp_pars = {
 }
 
 timeSteps = round((qb.wfm_pars['tmax']-qb.wfm_pars['t0'])/qb.wfm_pars['dt'])
-nReps = 1000
+nReps = 1500
 data = np.zeros((nReps,timeSteps))
 for i in range(nReps):
     print('repetition number',i)

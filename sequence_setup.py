@@ -456,9 +456,9 @@ def qubit_reset_sequence():
             wait(100);
         } else {
             executeTableEntry(1023);
-            wait(100);
+            wait(10000);
             }
-        wait(60000);
+        wait(20000);
       '''
      
     return awg_program
@@ -1000,15 +1000,16 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         
     if exp == 'coherence-stabilization':
         wfm_index = 0
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
-        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps) #Noise and coherent control wfms
         ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
         ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
         ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_amp'],base_theta,0) # pi pulse
+        #ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_half_amp'],base_theta,0)
         
     elif exp == 't-rabi':
         wfm_index = 3
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps,wfm_index,amp_tom,base_theta,theta_tom) # tomography pulse
         wfm_index = 0 # gauss rise
         ct = arb_pulse(ct,n_steps+1,wfm_index,1,base_theta,0)
@@ -1023,10 +1024,10 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,0,n_steps)
         wfm_index = 3
         exp_pars['tomographic-axis'] = 'X'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+3,wfm_index,amp_tom,base_theta,theta_tom) # X tomography pulse
         exp_pars['tomographic-axis'] = 'Y'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+4,wfm_index,amp_tom,base_theta,theta_tom) # Y tomography pulse
         ct = arb_pulse(ct,n_steps+5,wfm_index,0,base_theta,0) # Z tomography pulse
     elif exp == 'T1':

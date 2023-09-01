@@ -257,12 +257,18 @@ def compute_wfm_new(time_arr,exp_pars,qb_pars,gamma,plot=True):
         DESCRIPTION.
 
     '''
-    #theta = 
-    #phi = 
+    
+    # determine polar and azimuthal axes
+    theta = exp_pars['initial-state'][1] * np.pi
+    phi = exp_pars['initial-state'][0] * np.pi
+    
+    #Compute vx and vy
+    vy = np.sin(theta/2) * np.sin(phi)
+    vz = np.cos(theta/2)
     
     
     wfm = np.zeros(len(time_arr))
-    tb = 1/(4*gamma)
+    tb = vy^2 / (4*gamma* vz^2)
     for i in range(len(time_arr)):
         value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
         if math.isnan(value):

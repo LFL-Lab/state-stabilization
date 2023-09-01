@@ -503,7 +503,7 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     axs[0,1].plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
     axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
     axs[0,1].legend()
-    axs[0,1].set_ylim([-1.0,1.0])
+    axs[0,1].set_ylim([1,3])
     axs[0,1].axvline(x = t2_2,c= 'k',ls = '--')
     # # sx, sy waveforms
     axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)

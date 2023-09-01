@@ -89,7 +89,7 @@ pt.plot_t_rabi_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=q
 
 qb.exp_pars = {
     'exp':                  'p-rabi',
-    'n_avg':                2048,
+    'n_avg':                1024,
     'x0':                   0,
     'xmax':                 0.3,
     'dx':                   10e-3,
@@ -264,25 +264,25 @@ pt.tom_calib_plot(x_data=t, y_data=data_cal, coords=calib_states)
 
 qb.wfm_pars = {
     'x0':                   0.05e-6,
-    'xmax':                 10e-6,
-    'dx':                   0.04e-6,
+    'xmax':                 6e-6,
+    'dx':                   0.05e-6,
     'fsAWG':                1.2e9,
     'mu':                   0,
     'sigma':                250e-3,
-    'T2':                   4e-6,         
+    'T2':                   6.2e-6,         
     }
 
 qb.exp_pars = {
     'exp':                  'coherence-stabilization',
     'initial-state':        (1/2,1/4),  # in units of pi
     'n_avg':                512,
-    'n_realizations':       500,
+    'n_realizations':       1,
     'x0':                   qb.wfm_pars['x0'],
     'xmax':                 qb.wfm_pars['xmax'],
     'dx':                   qb.wfm_pars['dx'],
     'fsAWG':                qb.wfm_pars['fsAWG'],
     'amp_q':                1,
-    'active_reset':         True,
+    'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq'],
 }
 wfms,data,v_b,calib_states,nSteps = qb.coherence_stabilization(qb=qb_name,device_name=device_name,verbose=1,save_data=True)

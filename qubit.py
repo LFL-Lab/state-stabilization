@@ -649,7 +649,7 @@ class qubit():
             self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],f_IF=self.qb_pars['qb_IF'],cal='ssb',amp=0.3,threshold=-50,span=0.5e6)
             
             
-        n_avg = self.exp_pars['n_avg']
+        #n_avg = self.exp_pars['n_avg']
         # stops AWGs and reset the QA to get rid of errors
         self.enable_awg(self.awg,enable=0)
         self.enable_awg(self.qa,enable=0)
@@ -717,9 +717,13 @@ class qubit():
                 #First point has no state preparation, last point is just a pi pulse, use for calibration
                 
                 # Compute offsets for each axis:
-                offset_x= (data[0,0,j]+data[0,-1,j])/2
-                offset_y= (data[1,0,j]+data[1,-1,j])/2
-                offset_z= (data[2,0,j]+data[2,-1,j])/2
+                #offset_x= (data[0,0,j]+data[0,-1,j])/2
+                #offset_y= (data[1,0,j]+data[1,-1,j])/2
+                #offset_z= (data[2,0,j]+data[2,-1,j])/2
+                
+                #amp_x = (data[0,0,j]-data[0,-1,j])/2
+                #amp_y = (data[1,0,j]-data[1,-1,j])/2
+                #amp_z =(data[2,0,j]-data[2,-1,j])/2
                 
                 # Calibrate With offset
                 offset= (data[2,0,j]+data[2,-1,j])/2

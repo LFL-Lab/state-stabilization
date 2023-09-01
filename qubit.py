@@ -716,6 +716,7 @@ class qubit():
                 
                 #First point has no state preparation, last point is just a pi pulse, use for calibration
 <<<<<<< HEAD
+<<<<<<< HEAD
                 
                 # Compute offsets for each axis:
                 #offset_x= (data[0,0,j]+data[0,-1,j])/2
@@ -727,6 +728,8 @@ class qubit():
                 #amp_z =(data[2,0,j]-data[2,-1,j])/2
                 
                 # Calibrate With offset
+=======
+>>>>>>> parent of 80967f1 (added wait times to state-stabilization sequence for awg after state prep pulse and tom pulse; adding offset calibration for each axis)
 =======
 >>>>>>> parent of 80967f1 (added wait times to state-stabilization sequence for awg after state prep pulse and tom pulse; adding offset calibration for each axis)
                 offset= (data[2,0,j]+data[2,-1,j])/2

@@ -396,9 +396,7 @@ def state_stabilization_sequence():
         _qubit_reset_
         for (i=0; i<n_steps; i++) {
                 executeTableEntry(n_steps);
-                wait(50);
                 executeTableEntry(i);
-                wait(50);
                 executeTableEntry(n_steps+1);
                 _trigger_readout_
                 _qubit_reset_

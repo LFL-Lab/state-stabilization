@@ -715,6 +715,7 @@ class qubit():
                     self.enable_awg(self.qa,enable=0) # stops the readout sequence
                 
                 #First point has no state preparation, last point is just a pi pulse, use for calibration
+<<<<<<< HEAD
                 
                 # Compute offsets for each axis:
                 #offset_x= (data[0,0,j]+data[0,-1,j])/2
@@ -726,6 +727,8 @@ class qubit():
                 #amp_z =(data[2,0,j]-data[2,-1,j])/2
                 
                 # Calibrate With offset
+=======
+>>>>>>> parent of 80967f1 (added wait times to state-stabilization sequence for awg after state prep pulse and tom pulse; adding offset calibration for each axis)
                 offset= (data[2,0,j]+data[2,-1,j])/2
                 amp = (data[2,0,j]-data[2,-1,j])/2
                 calib_states = self.cal_coord(offset, amp)
@@ -740,7 +743,7 @@ class qubit():
         
         # retrieves swept variable values from command table. This ensures that the final plot showcases the
         # correct values for the x-axis
-        #x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
+        x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
         wfms = self.get_wfms() # get wfms from AWG
         
         if source == 2 or source == 1:
@@ -756,117 +759,117 @@ class qubit():
         return wfms,np.mean(results,axis=2),np.mean(v_b,2),calib_states,self.n_steps 
         #return wfms,results,v_b,self.n_steps 
 
-    # def coherence_stabilization_threshold(self,device_name='',qb='',calibrate=False,verbose=True,save_data = False):
+    def coherence_stabilization_threshold(self,device_name='',qb='',calibrate=False,verbose=True,save_data = False):
         
-    #     '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
+        '''Runs a single instance of a pulsed experiment, where one variable is swept (time,amplitude,phase)'''
         
-    #     source = 2
-    #     # update qubit IF frequency
-    #     # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
-    #     self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
-    #     if calibrate:
-    #         self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True)
-    #         self.min_leak(inst=self.qa,f_LO=self.qb_pars['rr_LO'],mixer='rr',cal='lo',plot=True)
-    #         self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],f_IF=self.qb_pars['qb_IF'],cal='ssb',amp=0.3,threshold=-50,span=0.5e6)
+        source = 2
+        # update qubit IF frequency
+        # self.update_qb_value('qb_IF', self.exp_pars['qubit_drive_freq']-self.qb_pars['qb_LO'])
+        self.awg.setDouble('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
+        if calibrate:
+            self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True)
+            self.min_leak(inst=self.qa,f_LO=self.qb_pars['rr_LO'],mixer='rr',cal='lo',plot=True)
+            self.min_leak(inst=self.awg,f_LO=self.qb_pars['qb_LO'],f_IF=self.qb_pars['qb_IF'],cal='ssb',amp=0.3,threshold=-50,span=0.5e6)
             
             
-    #     n_avg = self.exp_pars['n_avg']
-    #     # stops AWGs and reset the QA to get rid of errors
-    #     self.enable_awg(self.awg,enable=0)
-    #     self.enable_awg(self.qa,enable=0)
-    #     self.qa_result_reset()
-    #     # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
-    #     # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
-    #     # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
-    #     # requirement of the AWG is satisfied.
-    #     self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.wfm_pars,verbose)
-    #     self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
-    #     self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
-    #     self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
-    #     # self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
-    #     # setup QA AWG
-    #     # self.n_steps += 2
-    #     self.setup_qa_awg(ssb=False) # setup QA AWG for readout
+        n_avg = self.exp_pars['n_avg']
+        # stops AWGs and reset the QA to get rid of errors
+        self.enable_awg(self.awg,enable=0)
+        self.enable_awg(self.qa,enable=0)
+        self.qa_result_reset()
+        # create time, amplitude, or phase arrays. In case the experiment calls for the delay between pulses to 
+        # be swept, the function "calc_steps" determines the right initial/final times and stepsize in number of AWG
+        # samples based on the input experimental parameter dictionary. This ensures the 16-sample granularity 
+        # requirement of the AWG is satisfied.
+        self.n_points,self.n_steps,self.x0,self.xmax,self.dx = utils.calc_steps(self.wfm_pars,verbose)
+        self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
+        self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
+        self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
+        # self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
+        # setup QA AWG
+        # self.n_steps += 2
+        self.setup_qa_awg(ssb=False) # setup QA AWG for readout
         
-    #     # setup QA Result unit
-    #     self.config_qa(result_length=self.n_steps+2,source=1,ssb=False) # threshold mode
-    #     #self.config_qa(result_length=self.n_steps+2,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
-    #     self.qa.sync()
+        # setup QA Result unit
+        self.config_qa(result_length=self.n_steps+2,source=1,ssb=False) # threshold mode
+        #self.config_qa(result_length=self.n_steps+2,source=2,ssb=False) # configure UHFQA result unit, source = 2 means data is rotated
+        self.qa.sync()
         
-    #     # setup active reset if applicable
-    #     if self.exp_pars['active_reset'] == True:
-    #         self.setup_active_reset()
+        # setup active reset if applicable
+        if self.exp_pars['active_reset'] == True:
+            self.setup_active_reset()
 
-    #     exp_dur = self.calc_timeout()
-    #     print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
+        exp_dur = self.calc_timeout()
+        print('Estimated Measurement Time (with/without active reset): %.3f/%.3f sec'%(int(1/8*exp_dur),exp_dur))
 
-    #     if self.exp_pars['active_reset'] == True:
-    #         timeout = 0.2*1.2*exp_dur
-    #     else:
-    #         timeout = 1.2*exp_dur
+        if self.exp_pars['active_reset'] == True:
+            timeout = 0.2*1.2*exp_dur
+        else:
+            timeout = 1.2*exp_dur
 
-    #     data = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
-    #     v_b = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
+        data = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
+        v_b = np.zeros((3,self.n_steps+2,self.exp_pars['n_realizations']))
         
-    #     if save_data:
-    #         filepath = self.create_datafile(qb, device_name)
-    #     else:
-    #         pass
+        if save_data:
+            filepath = self.create_datafile(qb, device_name)
+        else:
+            pass
         
-    #     with tqdm(total=self.exp_pars['n_realizations']) as pbar:
-    #         for j in range(self.exp_pars['n_realizations']):
-    #             for i,st in enumerate(['X','Y','Z']):
-    #                 self.exp_pars['tomographic-axis'] = st
-    #                 self.setup_awg()
-    #                 self.enable_awg(self.qa,enable=1) # start the readout sequence
-    #                 sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
-    #                 self.qa_result_enable() # arm the qa
-    #                 str_meas = time.time()
-    #                 self.enable_awg(self.awg,enable=1) #runs the drive sequence
-    #                 temp = self.acquire_data(paths, self.n_steps+2, timeout =30) 
-    #                 #temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10)# retrieve data from UHFQA
-    #                 end_meas = time.time()
-    #                 print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
-    #                 for path, samples in temp.items():
-    #                     sweep_data[path] = np.append(sweep_data[path], samples) 
-    #                 # reset QA result unit and stop AWGs
-    #                 self.stop_result_unit(paths)
-    #                 norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
-    #                 data[i,:,j] = sweep_data[paths[0]][:]/norm # normalizes the data according to the integration length
-    #                 # self.qa_result_reset()
-    #                 self.enable_awg(self.qa,enable=0) # stops the readout sequence
+        with tqdm(total=self.exp_pars['n_realizations']) as pbar:
+            for j in range(self.exp_pars['n_realizations']):
+                for i,st in enumerate(['X','Y','Z']):
+                    self.exp_pars['tomographic-axis'] = st
+                    self.setup_awg()
+                    self.enable_awg(self.qa,enable=1) # start the readout sequence
+                    sweep_data, paths = self.create_sweep_data_dict() # subscribe to QA data path
+                    self.qa_result_enable() # arm the qa
+                    str_meas = time.time()
+                    self.enable_awg(self.awg,enable=1) #runs the drive sequence
+                    temp = self.acquire_data(paths, self.n_steps+2, timeout =30) 
+                    #temp = self.acquire_data(paths, self.n_steps+2, timeout = 60*60*10)# retrieve data from UHFQA
+                    end_meas = time.time()
+                    print('\nmeasurement duration: %.1f s' %(end_meas-str_meas))
+                    for path, samples in temp.items():
+                        sweep_data[path] = np.append(sweep_data[path], samples) 
+                    # reset QA result unit and stop AWGs
+                    self.stop_result_unit(paths)
+                    norm = self.qa.get('/dev2528/qas/0/integration/length')['dev2528']['qas']['0']['integration']['length']['value'][0]
+                    data[i,:,j] = sweep_data[paths[0]][:]/norm # normalizes the data according to the integration length
+                    # self.qa_result_reset()
+                    self.enable_awg(self.qa,enable=0) # stops the readout sequence
                 
-    #             #First point has no state preparation, last point is just a pi pulse, use for calibration
-    #             offset= (data[2,0,j]+data[2,-1,j])/2
-    #             amp = (data[2,0,j]-data[2,-1,j])/2
-    #             calib_states = self.cal_coord(offset, amp)
-    #             v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
-    #             #v_b[:,:,j] = np.floor(np.abs(data[:,:,j])/np.abs(offset))
-    #             self.exp_pars['threshold'] = offset*4096
-    #             self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.qb_pars['threshold'])
-    #             try:
-    #                 self.save_data(filepath,v_b[:,:,j])
-    #             except:
-    #                 pass
-    #             pbar.update(1)
+                #First point has no state preparation, last point is just a pi pulse, use for calibration
+                offset= (data[2,0,j]+data[2,-1,j])/2
+                amp = (data[2,0,j]-data[2,-1,j])/2
+                calib_states = self.cal_coord(offset, amp)
+                v_b[:,:,j] = utils.compute_bloch(data[:,:,j], calib_states)
+                #v_b[:,:,j] = np.floor(np.abs(data[:,:,j])/np.abs(offset))
+                self.exp_pars['threshold'] = offset*4096
+                self.qa.setDouble('/dev2528/qas/0/thresholds/0/level', self.qb_pars['threshold'])
+                try:
+                    self.save_data(filepath,v_b[:,:,j])
+                except:
+                    pass
+                pbar.update(1)
         
-    #     # retrieves swept variable values from command table. This ensures that the final plot showcases the
-    #     # correct values for the x-axis
-    #     x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
-    #     wfms = self.get_wfms() # get wfms from AWG
+        # retrieves swept variable values from command table. This ensures that the final plot showcases the
+        # correct values for the x-axis
+        x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
+        wfms = self.get_wfms() # get wfms from AWG
         
-    #     if source == 2 or source == 1:
-    #         results = data
-    #     elif source == 7:
-    #         I = data.real
-    #         Q = data.imag
-    #         results = [[I],[Q]]
+        if source == 2 or source == 1:
+            results = data
+        elif source == 7:
+            I = data.real
+            Q = data.imag
+            results = [[I],[Q]]
 
-    #     # if save_data:
-    #     #     self.save_data(qb,device_name,data=np.vstack((x_array,v_b)))
+        # if save_data:
+        #     self.save_data(qb,device_name,data=np.vstack((x_array,v_b)))
             
-    #     return wfms,np.mean(results,axis=2),np.mean(v_b,2),calib_states,self.n_steps 
-    #     #return wfms,results,v_b,self.n_steps 
+        return wfms,np.mean(results,axis=2),np.mean(v_b,2),calib_states,self.n_steps 
+        #return wfms,results,v_b,self.n_steps 
 
     #%% setup_HDAWG
     def setup_awg(self):

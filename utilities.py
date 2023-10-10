@@ -68,17 +68,31 @@ def Watt2dBm(x):
     '''
     return 10.*np.log10(x*1000.)
 
-def gen_arb_wfm(wfm_type,wfm_pars,normalize=False,n_points=1024):
-    '''a function that generates different types of arbitrary waveforms, based on the wfm parameters'''
+#def gen_arb_wfm(wfm_type,wfm_pars,normalize=False,n_points=1024):
+def gen_arb_wfm(wfm_type,wfm_pars={},exp_pars={},qb_pars={},normalize=False,n_points=1024):
+    '''a function that generates different types of arbitrary waveforms, 
+    based on the wfm parameters
+    INPUT:
+    -----
+    OUTPUT:
+    -----
+    '''
     time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
     if wfm_type == 'rising':
         gamma = 1/(2*wfm_pars['T2'])
-        wfm = compute_wfm(time_arr,gamma)
+        #gamma = np.pi/(2*wfm_pars['T2'])
+        wfm = compute_wfm(time_arr,
+                          exp_pars=exp_pars,
+                          qb_pars=qb_pars,
+                          gamma=gamma,
+                          plot = True)
+        #wfm = compute_wfm(time_arr,gamma)
     elif wfm_type == 'markov':
-        wfm = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], n_points)
+        wfm_long = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], 2*n_points)
+        wfm = wfm_long[int(n_points/2):3*int(n_points/2)]
         Nf = 1/2*wfm_pars["fsAWG"]
         # print(f'Nyquist frequency is {Nf*1e-6:.1f} MHz')
-        fc = 30e6
+        fc = 50e6
         Wn = fc/Nf
         b,a = signal.butter(8,Wn,btype='lowpass')
         wfm = signal.lfilter(b, a, wfm)
@@ -149,8 +163,11 @@ def compute_bloch(data,calib_pars):
     v_b = np.zeros((3,data.shape[1]))
     
     for j in range(data.shape[1]):
+        #v_b[0,j] = 1-2*(calib_pars[0]-data[0,j])/calib_pars[3]
+        #v_b[1,j] = 1-2*(calib_pars[1]-data[1,j])/calib_pars[4]
+        #v_b[2,j] = 1-2*(calib_pars[2]-data[2,j])/calib_pars[5]
         for i in range(3):
-            v_b[i,j] = 1-2*abs((data[i,j]-calib_pars[2]))/calib_pars[3]
+            v_b[i,j] = 1-2*(calib_pars[2]-data[i,j])/calib_pars[3]
         
     return v_b
 
@@ -202,83 +219,92 @@ def normalize_data(data):
     
     return normalized_data
 
-def compute_wfm(time_arr,gamma,plot=True):
-    '''
-    computes amplitude waveform based on input value of decoherence rate gamma
+# def compute_wfm(time_arr,gamma,plot=True):
+#     '''
+#     computes amplitude waveform based on input value of decoherence rate gamma
 
-    Parameters
-    ----------
-    time_arr : TYPE
-        DESCRIPTION.
-    gamma : decoherence rate in Hz
-    plot : TYPE, optional
-        DESCRIPTION. The default is True.
+#     Parameters
+#     ----------
+#     time_arr : TYPE
+#         DESCRIPTION.
+#     gamma : decoherence rate in Hz
+#     plot : TYPE, optional
+#         DESCRIPTION. The default is True.
 
-    Returns
-    -------
-    TYPE
-        DESCRIPTION.
+#     Returns
+#     -------
+#     TYPE
+#         DESCRIPTION.
 
-    '''
-    wfm = np.zeros(len(time_arr))
-    tb = 1/(4*gamma)
-    for i in range(len(time_arr)):
-        value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
-        if math.isnan(value):
-            wfm[i:] = 0
-            #wfm[i:] = wfm[i-1]
-            break
-        else:
-            # print(value*1e-6)
-            wfm[i] = convert_w_to_v(value)
+#     '''
+#     wfm = np.zeros(len(time_arr))
+#     tb = 1/(4*gamma)
+#     for i in range(len(time_arr)):
+#         value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
+#         if math.isnan(value):
+#             wfm[i:] = 0
+#             #wfm[i:] = wfm[i-1]
+#             break
+#         else:
+#             # print(value*1e-6)
+#             wfm[i] = convert_w_to_v(value)
     
-    # print(wfm)
-    if plot:
-        plt.plot(time_arr,wfm,time_arr,np.full(len(time_arr),tb))
-        plt.ylim([-1,1])
+#     # print(wfm)
+#     if plot:
+#         plt.plot(time_arr,wfm,time_arr,np.full(len(time_arr),tb))
+#         plt.ylim([-1,1])
         
-    return np.array(wfm)
+#     return np.array(wfm)
 
-def compute_wfm_new(time_arr,exp_pars,qb_pars,gamma,plot=True):
+def compute_wfm(time_arr,gamma,exp_pars={},qb_pars={},plot=True):
     '''
     computes amplitude waveform based on input value of decoherence rate gamma
 
-    Parameters
+    INPUT
     ----------
-    time_arr : TYPE
-        DESCRIPTION.
-    gamma : decoherence rate in Hz
-    plot : TYPE, optional
-        DESCRIPTION. The default is True.
+    time_arr (ARRAY): time array for waveform.
+    gamma (FLOAT): decoherence rate in Hz.
+    exp_pars (DICTIONARY): list of experimental parameters defined in Master Script before running.
+    qb_pars (DICTIONARY): list of qubit parameters defined in JSON file.
+    plot (BOOLEAN): optional, default set to TRUE
 
-    Returns
+
+    OUTPUT
     -------
-    TYPE
-        DESCRIPTION.
+    wfm (ARRAY): array of waveform amplitude at each timestep in time array
 
     '''
     
     # determine polar and azimuthal axes
-    theta = exp_pars['initial-state'][1] * np.pi
-    phi = exp_pars['initial-state'][0] * np.pi
+    theta = exp_pars['initial-state'][1] * np.pi # POLAR
+   
+    phi = exp_pars['initial-state'][0] * np.pi # AZIMUTHAL
     
-    #Compute vx and vy
-    vy = np.sin(theta/2) * np.sin(phi)
-    vz = np.cos(theta/2)
+    #Compute vz and vy (Bloch vector components)
+    vy = np.sin(theta) * np.sin(phi)
+    vz = np.cos(theta)
     
     
     wfm = np.zeros(len(time_arr))
-    tb = vy^2 / (4*gamma* vz^2)
+    
+    # Compute Breakdown Time
+    tb = vy**2 / (4*gamma* vz**2)
+    
     for i in range(len(time_arr)):
-        value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
+        
+        #compute amplitude
+        #value = -gamma/(np.sqrt(1 - time_arr[i]/tb))
+        #value = 0.000001*-1/np.pi * np.sqrt(gamma /(tb-time_arr[i]))
+        value = -1/2 * np.sqrt(gamma /(tb-time_arr[i]))
         if math.isnan(value):
+            #turn off wave when t = tb
             wfm[i:] = 0
             #wfm[i:] = wfm[i-1]
             break
         else:
             # print(value*1e-6)
-            wfm[i] = convert_w_to_v(value)
-    
+           # wfm[i] = convert_w_to_v(value)
+           wfm[i] = convert_w_to_v(w=value,qb_pars = qb_pars,b = 0)
     # print(wfm)
     if plot:
         plt.plot(time_arr,wfm,time_arr,np.full(len(time_arr),tb))
@@ -287,8 +313,22 @@ def compute_wfm_new(time_arr,exp_pars,qb_pars,gamma,plot=True):
     return np.array(wfm)
 
 
-def convert_w_to_v(w,a=7.2488,b=0):
-    '''converts input from angular units to amplitude in volts'''
+def convert_w_to_v(w,qb_pars = {},b = 0):
+#   convert_w_to_v(w,a=7.3236,b=0):
+    '''converts input from angular units to amplitude in volts
+    
+    INPUT
+    ------
+    w (FLOAT):
+    #a (FLOAT): 
+    b (FLOAT):
+    OUTPUT
+    ------
+    '''
+    #a is the Rabi frequency (in MHz) of a 1 V signal
+    #to find it, take 1 / (2*pi_len/fs * pi_amp)
+    
+    a = compute_a(qb_pars = qb_pars)
     return (w*1e-6-b)/(2*np.pi*a)
 
 def line(x,a,b):
@@ -305,4 +345,10 @@ def sort_data(unsorted_data):
         sorted_data[j,k] = unsorted_data[i]
     
     return sorted_data
-            
+
+
+def compute_a(qb_pars = {}):  
+    ''' Computes a that is used in convert_w_to_v'''
+    
+    return (2 * qb_pars['pi_len']/ 2.4 *1e-3  * qb_pars['pi_amp'])**(-1)
+              

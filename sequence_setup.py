@@ -30,6 +30,8 @@ def gen_seq_code(exp_pars):
         active_reset = exp_pars['active_reset']
     except:
         active_reset = False
+    if exp == 'coherence-stabilization':
+        axis = 'Z'
     
     if exp == 'spectroscopy':
         code = spec_sequence(on_off)
@@ -120,6 +122,7 @@ def spec_sequence(on_off=True):
         repeat(n_avg) {
             // OFF Measurement
             _trigger_readout_
+            wait(5000);
             // ON measurement
             playWave(1,w_const,2,w_zero);
             _trigger_readout_
@@ -326,12 +329,11 @@ def echo_sequence():
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
         for (i=0; i<n_steps; i++) {
-                executeTableEntry(n_steps+1);
-                executeTableEntry(i);
-                executeTableEntry(n_steps+2);
-                executeTableEntry(i);
-                executeTableEntry(n_steps+1);
-                _tomography_pulse_
+                executeTableEntry(n_steps+1);// pi /2 pulse
+                executeTableEntry(i); //zero pulse for t/2 time
+                executeTableEntry(n_steps+2); // pi pulse
+                executeTableEntry(i); // zero for t/2
+                executeTableEntry(n_steps+1); // pi/2
                 _trigger_readout_
                 _qubit_reset_
       }
@@ -382,6 +384,8 @@ def tomography_sequence():
 
     return awg_program
 
+
+
 def state_stabilization_sequence():
     
     awg_program = '''
@@ -392,24 +396,68 @@ def state_stabilization_sequence():
     // Beginning of the core sequencer program executed on the HDAWG at run time
     repeat(n_avg){
         wait(100000);
-        _trigger_readout_ // t = 0 measurement
+        _trigger_readout_ // gnd state measurement for calibration
         _qubit_reset_
         for (i=0; i<n_steps; i++) {
-                executeTableEntry(n_steps);
+                executeTableEntry(n_steps); // prep pulse
+                wait(50);
+                executeTableEntry(i); // evolution
+                wait(50);
+                executeTableEntry(n_steps+1); // tomography x
+                _trigger_readout_
+                _qubit_reset_
+                executeTableEntry(n_steps); //preparation pulse
+                wait(50);
                 executeTableEntry(i);
-                executeTableEntry(n_steps+1);
+                wait(50);
+                executeTableEntry(n_steps+2); // tomography y
+                _trigger_readout_
+                _qubit_reset_
+                executeTableEntry(n_steps); // preparation pulse
+                wait(50);
+                executeTableEntry(i); // evolution
+                wait(50);
+                executeTableEntry(n_steps+3); // tomography z
                 _trigger_readout_
                 _qubit_reset_
                 }
-            wait(100000);
-                executeTableEntry(n_steps+2); //do pi pulse
-                _trigger_readout_
+                executeTableEntry(n_steps+4); // pi pulse
+                _trigger_readout_ // exc state meas for calib
                 _qubit_reset_  
       }
     '''
-    
     return awg_program
- 
+
+# def state_stabilization_sequence():
+    
+#     awg_program = '''
+   
+#     resetOscPhase();
+#     wave w_marker = 2*marker(512,1);
+#     var i;
+#     // Beginning of the core sequencer program executed on the HDAWG at run time
+#     repeat(n_avg){
+#         wait(100000);
+#         _trigger_readout_ // gnd state measurement for calibration
+#         _qubit_reset_
+#         for (i=0; i<n_steps; i++) {
+#                 wait(100);
+#                 executeTableEntry(n_steps);
+#                 wait(50);
+#                 executeTableEntry(i);
+#                 wait(50);
+#                 executeTableEntry(n_steps+1);
+#                 _trigger_readout_
+#                 _qubit_reset_
+#                 }
+#                 executeTableEntry(n_steps+2); //do pi pulse
+#                 _trigger_readout_ // exc state meas for calib
+#                 _qubit_reset_  
+#       }
+#     '''
+    
+#     return awg_program
+
 def single_shot_sequence():
     '''Generate qubit spectroscopy sequence'''
    
@@ -450,11 +498,11 @@ def qubit_reset_sequence():
     awg_program = '''
         waitDigTrigger(1);
         wait(1000);
-        if (getDigTrigger(2) == 1) {
-            wait(100);
+        if (getDigTrigger(2) == 0) {
+            wait(300);
         } else {
             executeTableEntry(1023);
-            wait(10000);
+            wait(20000);
             }
         wait(20000);
       '''
@@ -462,7 +510,7 @@ def qubit_reset_sequence():
     return awg_program
 #executeTableEntry(1023);
 #%% waveform_funcs
-def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1.0, pulse_length = 16 , output_order='1' ):
+def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, exp_pars ={},qb_pars={},amplitude = 1.0, pulse_length = 16 , output_order='1' ):
     '''
     Generates string to be used for generating waveforms to be uploaded to the AWG 
     
@@ -495,9 +543,19 @@ def make_wave(pulse_type='gauss', wave_name='wave', wfm_pars = {}, amplitude = 1
         gauss_pulse = amplitude * gaussian(pulse_length, pulse_length/5)
         pulse = gauss_pulse[int(pulse_length/2):]
     elif pulse_type == 'arb_I':
-        pulse = amplitude*gen_arb_wfm('rising',wfm_pars,normalize=True)
+        #pulse = amplitude*gen_arb_wfm('rising',wfm_pars,normalize=True)
+        pulse = amplitude *  gen_arb_wfm('rising',
+                                         wfm_pars=wfm_pars,
+                                         exp_pars= exp_pars,
+                                         qb_pars=qb_pars,
+                                         normalize=True)
     elif pulse_type == 'arb_Q':
-        pulse = amplitude*gen_arb_wfm('markov',wfm_pars,n_points=pulse_length)
+        #pulse = amplitude*gen_arb_wfm('markov',wfm_pars,n_points=pulse_length)
+        pulse = amplitude* gen_arb_wfm('markov',
+                                       wfm_pars=wfm_pars,
+                                       exp_pars=exp_pars,
+                                       qb_pars=qb_pars,
+                                       n_points=pulse_length)
     else:
         # This should work for the rest of them ಠ_ಠ
         pulse = amplitude * gaussian(pulse_length , pulse_length/5)
@@ -798,8 +856,8 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
         
     elif exp == 'coherence-stabilization':
          N = qb_pars['pi_len']
-         amp_half = qb_pars['pi_half_amp']
-         pi_amp = qb_pars['pi_amp']
+         #amp_half = qb_pars['pi_half_amp']
+         #pi_amp = qb_pars['pi_amp']
          # amp = wfm_pars['amp']
          
          sequence.waveforms[0] = (
@@ -815,18 +873,7 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                          output_order = '12'))
          )    
 
-        #   sequence.waveforms[1] = (
-        #       Wave(*make_wave(pulse_type = 'pi',
-        #                 wave_name = 'w_tom_I',
-        #                 amplitude = 1,
-        #                 pulse_length = N,
-        #                 output_order = '12')), 
-        #       Wave(*make_wave(pulse_type = 'zero',
-        #                 wave_name = 'w_tom_Q',
-        #                 amplitude = 0,
-        #                 pulse_length = N,
-        #                 output_order = '12'))
-        # )  
+
 
          sequence.waveforms[1] = (
          Wave(*make_wave(pulse_type = 'arb_I',
@@ -834,13 +881,17 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                          amplitude = 1,
                          pulse_length = n_points,
                          wfm_pars = wfm_pars,
+                         exp_pars = exp_pars,
+                         qb_pars = qb_pars,
                          output_order = '12')), 
          Wave(*make_wave(pulse_type = 'arb_Q',
                          wave_name = 'w_arb_Q',
                          amplitude = 1,
                          pulse_length = n_points,
                          wfm_pars=wfm_pars,
-                         output_order = '12'))
+                         output_order = '12',
+                         exp_pars = exp_pars,
+                         qb_pars = qb_pars))
      )
          sequence.waveforms[2] = (
          Wave(*make_wave(pulse_type = 'pi',
@@ -898,19 +949,7 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         amplitude = amp,
                         pulse_length = N,
                         output_order = '12')))   
-        # sequence.waveforms[1] = (
-        # Wave(*make_wave(pulse_type = 'zero',
-        #                 wave_name = 'w_gauss2',
-        #                 amplitude = amp,
-        #                 pulse_length = N,
-        #                 output_order = '12')), 
-        # Wave(*make_wave(pulse_type = 'constant',
-        #                 wave_name = 'w_zero2',
-        #                 amplitude = amp,
-        #                 pulse_length = N,
-        #                 output_order = '12'))
-        # )   
-    
+
     if exp_pars['active_reset'] == True:
         N = qb_pars['pi_len']
         amp = qb_pars['pi_amp']
@@ -996,15 +1035,22 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     else:
         pass
         
+    # if exp == 'coherence-stabilization':
+    #     wfm_index = 0
+    #     theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
+    #     ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps) #Noise and coherent control wfms
+    #     ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
+    #     ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
+    #     ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_amp'],base_theta,0) # pi pulse
     if exp == 'coherence-stabilization':
         wfm_index = 0
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,amp_prep,base_amp = determine_axes_coherence(exp_pars,qb_pars)
         ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps) #Noise and coherent control wfms
         ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
-        ct = arb_pulse(ct,n_steps+1,2,amp_tom,base_theta,theta_tom) # tomography pulse
-        ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_amp'],base_theta,0) # pi pulse
-        #ct = arb_pulse(ct,n_steps+2,2,qb_pars['pi_half_amp'],base_theta,0)
-        
+        ct = arb_pulse(ct,n_steps+1,2,0.5*base_amp,base_theta,180) # tomography x pulse
+        ct = arb_pulse(ct,n_steps+2,2,0.5*base_amp,base_theta,-90) # tomography y pulse
+        ct = arb_pulse(ct,n_steps+3,2,0,base_theta,0) # tomography z pulse
+        ct = arb_pulse(ct,n_steps+4,2,qb_pars['pi_amp'],base_theta,0) # pi pulse    
     elif exp == 't-rabi':
         wfm_index = 3
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
@@ -1022,10 +1068,10 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
         ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,0,n_steps)
         wfm_index = 3
         exp_pars['tomographic-axis'] = 'X'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+3,wfm_index,amp_tom,base_theta,theta_tom) # X tomography pulse
         exp_pars['tomographic-axis'] = 'Y'
-        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
+        theta_prep,theta_tom,amp_prep,amp_tom = determine_axes_new(exp_pars,qb_pars)
         ct = arb_pulse(ct,n_steps+4,wfm_index,amp_tom,base_theta,theta_tom) # Y tomography pulse
         ct = arb_pulse(ct,n_steps+5,wfm_index,0,base_theta,0) # Z tomography pulse
     elif exp == 'T1':
@@ -1044,12 +1090,18 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     elif exp == 'calibrate-rabi':
         wfm_index = 0
         ct = arb_pulse(ct,0,wfm_index,qb_pars['pi_half_amp']/4,base_theta,0) # pi pulse
+    elif exp == 'echo':
+        ct = arb_pulse(ct,n_steps+1,0,1,base_theta,0) # pi/2 pulse
+        ct = arb_pulse(ct,n_steps+2,1,1,base_theta,0) #pi pulse
     if exp_pars['active_reset']:
         ct = arb_pulse(ct,1023,5,1,base_theta,0)
+    
+        
     else:
         pass
     
     return ct
+
     
 def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
     
@@ -1262,3 +1314,38 @@ def determine_axes_new(exp_pars,qb_pars):
     
     #print(theta_prep,theta_tom,amp_prep,amp_tom)
     return theta_prep,theta_tom,amp_prep,amp_tom
+
+
+
+def determine_axes_coherence(exp_pars,qb_pars):
+    '''
+    Construct parameters for pulses
+    
+    OUTPUT:
+    ------
+    theta_prep (FLOAT): state preparation angle
+    theta_tom (ARRAY): tomography axis angles (x,y,z)
+    amp_prep (FLOAT): state preparation pulse amplitude
+    amp_tom (ARRAY):  tomography pulse amplitude (x,y,z)
+    '''
+    print(f"Preparing {exp_pars['initial-state']} state")
+
+    
+    # base amplitude calibrated from Rabi
+    base_amp = qb_pars['pi_amp']
+    
+    # In units of pi
+    start_axis = exp_pars['initial-state'][0]
+    rot_axis = exp_pars['initial-state'][1]
+    
+    # Convert starting axis to degrees to match tomographic axis:
+    theta_prep = start_axis * 180
+    #theta_tom = np.array((180,-90,0)) # x,y,z tomgraphy angle 
+    #amp_tom = np.array((0.5,0.5,0)) # x,y,z tomography amplitude pulse
+    
+    # Pulse amplitude for preparation and for tomography
+    amp_prep = rot_axis*base_amp
+    #amp_tom = amp_tom*base_amp
+    
+
+    return theta_prep,amp_prep,base_amp

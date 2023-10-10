@@ -83,6 +83,7 @@ def qb_spec_plot(freq,I,Q,mag,exp_pars={},qb_pars={},attenuation=-30,iteration=1
     ax1.plot(freq,mag,'-o', markersize = 3, c='C0')
     ax1.set_xlabel('Frequency (GHz)')
     ax1.set_ylabel('Magnitude (mV)')
+    #ax1.set_ylim([0,1])
     # phase data
     # ax1 = fig.add_subplot(212)
     # ax1.plot(freq,phase,'-o', markersize = 3, c='C0')
@@ -209,12 +210,12 @@ def plot_p_rabi_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},
     ax.set_title(f'Rabi Measurement {iteration:03d}')
     textstr = f'$\omega_d$ = {qb_drive_freq:.4f} GHz\n$N$ = {exp_pars["n_avg"]}\n$A_\pi$ = {fitted_pars[1]/2:.3f}\n$T_\pi$ = {qb_pars["gauss_len"]/2.4:.1f} ns'
     
-    plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
+    plt.gcf().text(0.95, 0.65, textstr, fontsize=14)
 
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
-    if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\p-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
+    #if savefig:
+    #    plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\p-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
 
 
 def plot_t_rabi_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},device_name='',project='',iteration=1,savefig=True):
@@ -235,8 +236,8 @@ def plot_t_rabi_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},
 
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
-    if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\t-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
+    #if savefig:
+    #    plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\t-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
 
 def plot_ramsey_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},fitFunc='',iteration=1,device_name='',project='',savefig=True):
      
@@ -293,7 +294,9 @@ def plot_echo_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},it
     ax.plot(x_vector, y_vector, '-o', markersize = 3, c='C0')
     ax.set_ylabel('Digitizer Voltage (mV)')
     ax.set_xlabel('Pulse Separation ($\mu$s)')
+    
     ax.plot(x_vector,decay(x_vector, fitted_pars[0], fitted_pars[1], fitted_pars[2]),'r')
+    
     textstr = f'$T_\pi$ = {qb_pars["pi_len"]/2.4:.1f} ns\n$A_\pi$ = {qb_pars["pi_amp"]*1e3:.1f} mV\n$\omega_d$ = {qb_drive_freq:.4f} GHz\n$T_2^E$ = {fitted_pars[1]:.1f} $\mu$s\n$N$ = {exp_pars["n_avg"]}'
     ax.set_title(f'Echo Measurement {iteration:03d}')
     
@@ -301,8 +304,8 @@ def plot_echo_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},it
 
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
-    if savefig:
-        plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\echo-data\\fig_{iteration:03d}.png',dpi='figure')
+   # if savefig:
+   #     plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\echo-data\\fig_{iteration:03d}.png',dpi='figure')
 
 
 def plot_T1_data(x_vector,y_vector,fitted_pars,qb='',exp_pars={},qb_pars={},iteration=1,device_name='',project='',savefig=True):
@@ -411,7 +414,7 @@ def plot_mixer_opt(par1,par2,power_data,cal='LO',mixer='qubit',fc=5e9):
         hm.set_ylabel('I [mV]')
         hm.set_xlabel('Q [mV]')
     elif cal == 'SB':
-        hm.set_ylabel('Gain Imbalance (%)')
+        hm.set_ylabel('Gain Imbalance')
         hm.set_xlabel('Phase Imbalance')
 
     hm.spines[:].set_visible(True)
@@ -468,9 +471,9 @@ def plot_single_shot(datadict, exp_pars={},qb_pars={},iteration=1, axes=0):
     ax.fig.subplots_adjust(top = 0.85)
     # plt.show()
 
-def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_states={},savefig=False,project='',device_name='',qb=''):
+def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_states={},iteration = 1,savefig=False,project='',device_name='',qb=''):
     
-    v_b = v_b[:,1:-1]
+    #v_b = v_b[:,1:-1]
     qb_drive_freq = exp_pars['qubit_drive_freq']*1e-9
     fig, axs = plt.subplots(2,2,figsize=(12,9),dpi=150)
     # x_vector = x_vector*1e9
@@ -485,36 +488,59 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     # for i in range(v_b.shape[1]):
     #     plot_data[:,i] = compute_bloch(data[:,i],calib_pars=calib_states) 
     labels = ['$v_x$','$v_y$','$v_z$']
-    t2_2 = wfm_pars['T2']*1e6 / 2
+    
+    
+    gamma = 1/(2*wfm_pars['T2'])
+    theta = exp_pars['initial-state'][1] * np.pi
+   
+    phi = exp_pars['initial-state'][0] * np.pi
+    
+    #Compute vx and vy
+    vy = np.sin(theta) * np.sin(phi)
+    vz = np.cos(theta)
+    
+    
+    
+    
+    tb = vy**2 / (4*gamma* vz**2)*1e6
+    
     # coherence
     axs[0,0].plot(t_data, coherence, '-o', markersize = 3, c='C0')
     axs[0,0].set_ylabel('C(t)')
-    axs[0,0].set_xlabel('Drive Duration ($\mu$s)')
-    axs[0,0].axvline(x = t2_2,c= 'k',ls = '--')
+    axs[0,0].set_xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    axs[0,0].axvline(x = tb,c= 'k',ls = '--')
+    axs[0,0].axhline(y = vz*vz,c= 'k',ls = '--')
     # purity
     axs[1,0].plot(t_data, purity, '-o', markersize = 3, c='C0')
     axs[1,0].set_ylabel(r'Tr[$\rho^2$(t)]')
-    axs[1,0].set_xlabel('Drive Duration ($\mu$s)')
+    axs[1,0].set_xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
     axs[1,0].set_ylim([0,1.2])
-    axs[1,0].axvline(x = t2_2,c= 'k',ls = '--')
+    axs[1,0].axvline(x = tb,c= 'k',ls = '--')
     # bloch vector components
     axs[0,1].plot(t_data,plot_data[0,:],'-o',color='b',label=labels[0])
     axs[0,1].plot(t_data,plot_data[1,:],'-x',color='r',label=labels[1])
     axs[0,1].plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
-    axs[0,1].set_xlabel('Drive Duration ($\mu$s)')
+    axs[0,1].set_xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
     axs[0,1].legend()
-    axs[0,1].set_ylim([1,3])
-    axs[0,1].axvline(x = t2_2,c= 'k',ls = '--')
+    axs[0,1].set_ylim([-1,1])
+    axs[0,1].axvline(x = tb,c= 'k',ls = '--')
+    axs[0,1].axhline(y = vz,c= 'r',ls = '--')
+    axs[0,1].axhline(y = 0,c= 'k',ls = '--')
     # # sx, sy waveforms
     axs[1,1].plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)
     axs[1,1].plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
     
     axs[1,1].set_ylabel('A(t)')
-    axs[1,1].set_xlabel('Drive Duration ($\mu$s)')
-    axs[1,1].axvline(x = t2_2,c= 'k',ls = '--')
+    axs[1,1].set_xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    axs[1,1].axvline(x = tb,c= 'k',ls = '--')
     axs[1,1].legend()
     # # ax.set_title(f'Rabi Measurement {iteration:03d}')
     
+    fig.suptitle(f'Coherence Stabilization Measurement {iteration:03d}')
+    axs[0,0].set_title('A. ',loc = 'left',fontsize=14)
+    axs[0,1].set_title('B. ',loc = 'left',fontsize=14)
+    axs[1,0].set_title('C. ',loc = 'left',fontsize=14)
+    axs[1,1].set_title('D. ',loc = 'left',fontsize=14)
     textstr = f'Polar Angle: {polar}$\pi$'+f'\n Azimuthal Angle: {azimuth}$\pi$ '+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.1f}'+r'$\mu$s'
     # plt.tight_layout()
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
@@ -530,7 +556,7 @@ def fit_res(f_data,z_data,res_type='notch'):
     if res_type == 'notch':
         # z_data = z_data-min(z_data)
         
-        idx = np.argwhere(np.diff(np.sign(-(z_data - 0.5*max(z_data))))).flatten()
+        idx = np.argwhere(np.diff(np.sign(-(z_data**2 - 0.5*max(z_data**2))))).flatten()
         try:
             fwhm = f_data[idx[1]] - f_data[idx[0]]
         except:
@@ -548,8 +574,8 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
     dx:                 sequence stepsize. Used for extracting the frequency of the data
     '''
     
-    x_vector = x_vector*1e6
-    y_vector = y_vector*1e3
+    x_vector = x_vector*1e6 # convert to us
+    y_vector = y_vector*1e3 # convert to mv
 
     amp = (max(y_vector)-min(y_vector))/2
     offset = np.mean(y_vector)
@@ -618,26 +644,29 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
         fitFunction = cos
         
     elif exp == "echo":
+        #print('fitting echo')
         if x_vector[-1] < 10:
             tau = 2
             tau_ub = 20
         else:
             tau = 20
-            tau_ub = 300
-        amp = y_vector[0] - y_vector[-1]
+            tau_ub = 500
+        
+        if (np.abs(y_vector[0]) - np.abs(y_vector[-1]))<0 :
+            amp = -amp
+            off_bounds = [0.5 * offset, 2 * offset]
+            lb = [3 * amp, 1e-3, min(off_bounds)]
+            ub = [-2 * amp, tau_ub, max(off_bounds)]
+        else:
+            amp_bounds = [0.05 * amp, 5 * amp]
+            off_bounds = [0.5 * offset, 2 * offset]
+            lb = [min(amp_bounds), 1e-3, min(off_bounds)]
+            ub = [max(amp_bounds), tau_ub, max(off_bounds)]
+        #amp = abs(y_vector[0] - y_vector[-1])
         p0 = [amp, tau, offset]
-        amp_bounds = [0.95 * amp, 1.05 * amp]
-        off_bounds = [0.95 * offset, 1.05 * offset]
-        lb = [min(amp_bounds), 0.1, min(off_bounds)]
-        ub = [max(amp_bounds), tau_ub, max(off_bounds)]
-        # if offset < 0:
-        #     lb = [0.95*amp,0.1,1.05*offset]
-        #     ub = [1.05*amp,tau_ub,0.95*offset]
-        # elif offset >= 0:
-        #     lb = [0.95*amp,0.1,0.95*offset]
-        #     ub = [1.05*amp,tau_ub,1.05*offset]
+        #print(p0)
         fitFunction = decay
-        # fitted_pars, covar = scy.optimize.curve_fit(decay, x_vector, y_vector,p0=p0,method='trf',bounds=[lb,ub],xtol=1e-12,maxfev=6000)
+    
     elif exp == "T1":
         tau = 2
         amp = y_vector[0] - y_vector[-1]
@@ -652,7 +681,7 @@ def fit_data(x_vector,y_vector,exp='t-rabi',dx=0.01,fitFunc='',verbose=0):
         fitFunction = decay
         # fitted_pars, covar = scy.optimize.curve_fit(, x_vector, y_vector,p0=p0,method='trf',bounds=[lb,ub],xtol=1e-12,maxfev=6000)
 
-    fitted_pars, covar = scy.optimize.curve_fit(fitFunction, x_vector, y_vector,p0=p0,method='trf',bounds=[lb,ub],xtol=1e-12,maxfev=40e3)
+    fitted_pars, covar = scy.optimize.curve_fit(fitFunction, x_vector, y_vector,p0=p0,method='trf',bounds=[lb,ub],xtol=3e-16,maxfev=80e3)
     error = np.sqrt(abs(np.diag(covar)))
 
     if verbose == 1:
@@ -683,6 +712,9 @@ def beats(x,amp,f1,f2,phase1,phase2,tau,offset):
 def decay(x,amp,tau,offset):
     return amp*np.exp(-x/tau)+offset
 
+def log(x,amp,tau,offset):
+    return amp*np.log(x/tau)+offset
+    
 def cos(x,amp,f,phase,offset):
     return amp*np.cos(2*pi*f*x+phase)+offset
 

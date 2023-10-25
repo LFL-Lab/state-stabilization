@@ -356,12 +356,15 @@ def tom_calib_plot(x_data,y_data,coords,data='cal'):
     
     x_data = x_data*1e6
     plot_data = np.zeros(y_data.shape)
-    # plot_data = y_data
-    
+    #plot_data = y_data
+    #y_data = y_data*1e3
     if data == 'cal':
         # y_data = y_data*1e3
-       # plot_data = normalize_data(y_data)
+        #plot_data = normalize_data(y_data)
         plot_data = compute_bloch(y_data,calib_pars=coords)
+        off =np.mean(0-plot_data[1])
+        plot_data = plot_data + off
+        
         labels = [r'$\langle X|\psi\rangle$',r'$\langle Y|\psi\rangle$',r'$\langle Z|\psi\rangle$']
     else:
         #for i in range(y_data.shape[1]):
@@ -375,9 +378,13 @@ def tom_calib_plot(x_data,y_data,coords,data='cal'):
     ax.plot(x_data,plot_data[1,:],'-x',color='r',label=labels[1])
     ax.plot(x_data,plot_data[2,:],'-<',color='k',label=labels[2])
     
+    # ax.plot(x_data,y_data[0,:],'-o',color='b',label=labels[0])
+    # ax.plot(x_data,y_data[1,:],'-x',color='r',label=labels[1])
+    # ax.plot(x_data,y_data[2,:],'-<',color='k',label=labels[2])
+    ax.axhline(y= 0,c= 'k',ls = '--')
     ax.set_xlabel('Drive Duration ($\mu$s)')
-    # ax.set_ylabel('Bloch Vector')
-    ax.set_ylim(-1,1)
+    #ax.set_ylabel('Bloch Vector')
+    ax.set_ylim(-7.5,7.5)
     
     txt = r"$|+X\rangle$"+f" = {coords[0]*1e3:.1f} mV\n"+r"$|+Y\rangle$" +f"= {coords[1]*1e3:.1f} mV\n"+r"$|1\rangle$"+f" = {coords[2]*1e3:.1f} mV\n"
     plt.gcf().text(0.95, 0.15, txt, fontsize=14)
@@ -478,7 +485,8 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     fig, axs = plt.subplots(2,2,figsize=(12,9),dpi=150)
     # x_vector = x_vector*1e9
     # x_vector = data[0]
-    t_data = t_data*1e6
+    #t_data = t_data*1e6
+    t_data = t_data
     coherence = compute_coherence(v_b, calib_states)
     purity = compute_purity(v_b, calib_states)
     # wfms = data[4]
@@ -541,12 +549,63 @@ def plot_coherence(t_data,v_b,wfms,exp_pars={},qb_pars={},wfm_pars={},calib_stat
     axs[0,1].set_title('B. ',loc = 'left',fontsize=14)
     axs[1,0].set_title('C. ',loc = 'left',fontsize=14)
     axs[1,1].set_title('D. ',loc = 'left',fontsize=14)
-    textstr = f'Polar Angle: {polar}$\pi$'+f'\n Azimuthal Angle: {azimuth}$\pi$ '+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.1f}'+r'$\mu$s'
+    textstr = f'Polar Angle: {polar}$\pi$'+f'\n Azimuthal Angle: {azimuth}$\pi$ '+f'\n$\omega_d$ =  {qb_drive_freq:.4f} GHz\n'+f'$N$ = {exp_pars["n_avg"]}\n'+r'$\sigma$ = '+f'{wfm_pars["sigma"]*1e3:.1f} mV\n$T_1$ = {wfm_pars["T2"]*1e6:.3f}'+r'$\mu$s'
     # plt.tight_layout()
     plt.gcf().text(0.95, 0.15, textstr, fontsize=14)
 
     plt.tick_params(axis='both',direction='in',bottom=True, top=True, left=True, right=True,size=8)
 
+    #PLOT EACH FIGURE SEPARATELY:
+        
+    # Plot Coherence:
+     # coherence
+    plt.figure(3)
+    plt.title('Coherence')
+    plt.plot(t_data, coherence, '-o', markersize = 3, c='C0')
+    plt.ylabel('C(t)')
+    plt.xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    plt.axvline(x = tb,c= 'k',ls = '--')
+    plt.axhline(y = vz*vz,c= 'k',ls = '--')
+     # purity
+    plt.figure(4)
+    plt.title('Purity')
+    plt.plot(t_data, purity, '-o', markersize = 3, c='C0')
+    plt.ylabel(r'Tr[$\rho^2$(t)]')
+    plt.xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    plt.ylim([0,1.2])
+    plt.axvline(x = tb,c= 'k',ls = '--')
+    # bloch vector components
+    plt.figure(5)
+    plt.title('Bloch Vector Components')
+    plt.plot(t_data,plot_data[0,:],'-o',color='b',label=labels[0])
+    plt.plot(t_data,plot_data[1,:],'-x',color='r',label=labels[1])
+    plt.plot(t_data,plot_data[2,:],'-<',color='k',label=labels[2])
+    plt.xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    plt.legend()
+    plt.ylim([-1,1])
+    plt.axvline(x = tb,c= 'k',ls = '--')
+    plt.axhline(y = vz,c= 'r',ls = '--')
+    plt.axhline(y = 0,c= 'k',ls = '--')
+   # sx, sy waveforms
+   
+    plt.figure(6)
+    plt.title('Control Waveforms')
+    plt.plot(wfms[0]*1e6, wfms[2], '-o', markersize = 1, c='r',label='$\sigma_y$',alpha=0.25)
+    plt.plot(wfms[0]*1e6,wfms[1], '-o', markersize = 3, c='b',label='$\sigma_x$')
+     
+    plt.ylabel('A(t)')
+    plt.xlabel('Drive Duration ($\mu$s)',loc = 'center',fontsize=14)
+    plt.axvline(x = tb,c= 'k',ls = '--')
+    plt.legend()
+     # # ax.set_title(f'Rabi Measurement {iteration:03d}')
+     
+    #fig.suptitle(f'Coherence Stabilization Measurement {iteration:03d}')
+    #plt.set_title('A. ',loc = 'left',fontsize=14)
+    #axs[0,1].set_title('B. ',loc = 'left',fontsize=14)
+    #axs[1,0].set_title('C. ',loc = 'left',fontsize=14)
+    #axs[1,1].set_title('D. ',loc = 'left',fontsize=14)
+    
+    
     # if savefig:
         # plt.savefig(f'D:\\{project}\\{device_name}\\{qb}\\t-rabi-data\\fig_{iteration:03d}.png',dpi='figure')
         

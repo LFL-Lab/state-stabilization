@@ -22,7 +22,7 @@ qb = qubit(qb_name)
 #%% Spectroscopy (Resonator)
 '''-----------------------------------------------------Resonator Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=6.1155,stop=6.1165,step=5e-6) # frequencies are in GHz
+freqs = np.arange(start=6.1155,stop=6.1165,step=100e-6) # frequencies are in GHz
 
 qb.exp_pars = {
     'exp':                  'spectroscopy',
@@ -43,7 +43,7 @@ qb.update_qb_value('rr_LO',fc*1e9)
 
 '''-----------------------------------------------------Qubit Spectroscopy------------------------------------------------------'''
 
-freqs = np.arange(start=3.8,stop=4.5,step=1000e-6) # frequencies are in GHz
+freqs = np.arange(start=3.8,stop=4.5,step=4000e-3) # frequencies are in GHz
 
 qb.exp_pars = {
     'exp':                  'spectroscopy',
@@ -63,19 +63,19 @@ pt.qb_spec_plot(freq=freqs,I=I,Q=Q,mag=p_data*1e3,exp_pars=qb.exp_pars,qb_pars=q
 
 
 
-#%% Time Rabi
+#%% Time Rabi 
 '''-----------------------------------------------------Time Rabi------------------------------------------------------'''
 detuning = 0
 
 qb.exp_pars = {
     'initial-state':        '0',
     'exp':                  't-rabi',
-    'n_avg':                128,
-    'x0':                   13e-9,
-    'xmax':                 1e-6,
-    'dx':                   6e-9,
+    'n_avg':                512,
+    'x0':                   20e-9, #Minimum required is 32 samples for initial point
+    'xmax':                 0.8e-6,
+    'dx':                   3e-9,
     'fsAWG':                2.4e9,
-    'amp_q':                0.3,
+    'amp_q':                0.15/2,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq'],
     'tomographic-axis':     'Z',
@@ -91,10 +91,10 @@ pt.plot_t_rabi_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=q
 
 qb.exp_pars = {
     'exp':                  'p-rabi',
-    'n_avg':                512,
+    'n_avg':                2048,
     'x0':                   0,
-    'xmax':                 0.5,
-    'dx':                   5e-3,
+    'xmax':                 0.45,
+    'dx':                   2.5e-3,
     'fsAWG':                2.4e9,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq'],
@@ -106,10 +106,10 @@ amp,data,nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name,verbose=1,che
 
 fitted_pars,error = pt.fit_data(x_vector=amp,y_vector=data,exp='p-rabi',dx=qb.dx,verbose=0)
 #update threshold:
-#if(qb.exp_pars['active_reset']):
-#    pass
-#else:
-#    qb.update_qb_value('threshold',fitted_pars[2]*4096*1e-3)
+if(qb.exp_pars['active_reset']):
+    pass
+else:
+    qb.update_qb_value('threshold',fitted_pars[2]*4096*1e-3)
 
 # plot pulse
 pt.plot_p_rabi_data(amp,data,fitted_pars,
@@ -156,13 +156,14 @@ pt.plot_p_rabi_data(amp,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars
 
 qb.exp_pars = {
     'exp':                  'single-shot',
-    'num_samples':          512,
+    'num_samples':          2048,
     'n_avg':                1,
     'fsAWG':                2.4e9,
     'active_reset':         True,
     }
 
-theta =0
+theta = 2 ## RADIANS!
+
 
 data,offset_off,offset_pi = qb.single_shot(theta,device_name,qb_name)
 
@@ -173,8 +174,8 @@ pt.plot_single_shot(data, qb.exp_pars,qb.qb_pars,qb.iteration)
 
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 300e-6,
-    'dt':                   4e-6,
+    'tmax':                 200e-6,
+    'dt':                   1e-6,
     'fsAWG':                0.6e9,
     'mu':                   0,
     'sigma':                0e-3,
@@ -203,7 +204,7 @@ pt.plot_T1_data(t,data,fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb
 qb.wfm_pars = {
     't0':                   0.1e-6,
     'tmax':                 100e-6,
-    'dt':                   .025e-6,
+    'dt':                   .05e-6,
     'fsAWG':                0.6e9,
     'mu':                   0,
     'sigma':                0e-3,
@@ -212,7 +213,7 @@ qb.exp_pars = {
     'exp':                  'ramsey',
     'n_avg':                512,
     'x0':                   100e-9,
-    'xmax':                 300e-6,
+    'xmax':                 250e-6,
     'dx':                   1500e-9,
     'fsAWG':                0.6e9,
     'amp_q':                0.4,
@@ -232,7 +233,7 @@ pt.plot_ramsey_data(t,data,
                     qb_pars=qb.qb_pars,
                     device_name=device_name,
                     project=project,
-                    iteration =1)
+                    iteration =qb.iteration)
 # qb.update_qb_value('qb_freq', qb.exp_pars['qubit_drive_freq']-fitted_pars[1]*1e6)
 
 ## FOR RAMSEY TO UPDATE QB VALUE:
@@ -274,12 +275,12 @@ detuning = 0
 
 qb.exp_pars = {
     'exp':                  'tomography-calibration',
-    'n_avg':                2048,
-    'x0':                   13e-9,
+    'n_avg':                4096,
+    'x0':                   16e-9,
     'xmax':                 0.8e-6,
-    'dx':                   6e-9,
+    'dx':                   1e-9,
     'fsAWG':                2.4e9,
-    'amp_q':                0.15,
+    'amp_q':                0.15/2,
     'active_reset':         False,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
 }
@@ -356,11 +357,11 @@ qb.exp_pars = {
     'exp':                  'echo',
     'n_avg':                1024,
     'x0':                   50e-9,
-    'xmax':                 300e-6,
-    'dx':                   4000e-9,
+    'xmax':                 200e-6,
+    'dx':                   1000e-9,
     'fsAWG':                0.6e9,
     'amp_q':                0.1,
-    'active_reset':         True,
+    'active_reset':         False,
     'qubit_reset_time':     300e-6,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']+detuning,
     'tomographic-axis':     'Z',
@@ -372,7 +373,7 @@ fitted_pars,error = pt.fit_data(x_vector=t,y_vector=data,exp = 'echo',dx=t[-1]/n
 pt.plot_echo_data(x_vector=t,y_vector=data,fitted_pars=fitted_pars,exp_pars = qb.exp_pars,qb_pars = qb.qb_pars,iteration =1)
 
 #%% Mixer Optimization
-qb.min_leak(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True,span=0.4e6)
+qb.min_leak(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],mixer='qubit',cal='lo',plot=True,span=0.8e6)
  
 qb.min_leak(inst=qb.qa,f_LO=qb.qb_pars['rr_LO'],mixer='rr',cal='lo',plot=True,span=0.1e6)
 
@@ -389,25 +390,25 @@ qb.suppr_image(inst=qb.awg,f_LO=qb.qb_pars['qb_LO'],f_IF=qb.qb_pars['qb_IF'],amp
     
 qb.wfm_pars = {
     'x0':                   50e-9,
-    'xmax':                 5e-6,
-    'dx':                   0.25e-6,
-    'fsAWG':                1.2e9,
+    'xmax':                1e-6,
+    'dx':                   0.015e-6,
+    'fsAWG':                2.4e9,
     'mu':                   0,
     'sigma':                0e-3,
-    'T2':                   3e-6,         
+    'T2':                   3.21e-6,         
     }
 
 
 qb.exp_pars = {
     'exp':                  'coherence-stabilization',
-    'initial-state':        (1/2,1/4),  # in units of pi (azimuthal,polar)
-    'n_avg':                1024,
+    'initial-state':        (1/2,1/4.9 ),  # in units of pi (azimuthal,polar)
+    'n_avg':                4096*4,
     'n_realizations':       1,
     'x0':                   qb.wfm_pars['x0'],
     'dx':                   qb.wfm_pars['dx'],
     'fsAWG':                qb.wfm_pars['fsAWG'],
     'amp_q':                1,
-    'active_reset':         False,
+    'active_reset':         True,
     'qubit_drive_freq':     qb.qb_pars['qb_freq']
 }
 
@@ -424,7 +425,7 @@ t = np.linspace(qb.wfm_pars['x0'],qb.wfm_pars['xmax'],v_b.shape[1])
 #print('Initizalization Complete, starting measurements...')
 with tqdm(total=qb.exp_pars['n_realizations']) as pbar:
     for ii in range(qb.exp_pars['n_realizations']):
-        wfms,data[:,ii],v_b[:,:,ii],calib_states,nSteps = qb.coherence_stabilization_single(timeout=timeout,
+        wfms,data[:,ii],v_b[:,:,ii],calib_states,nSteps = qb.coherence_stabilization_single(timeout=2* timeout,
                                        n_steps=n_steps,
                                        filepath=filepath,
                                        device_name=device_name, 
@@ -446,3 +447,4 @@ pt.plot_coherence(t,v_ave,wfms,
                   wfm_pars = qb.wfm_pars,
                   calib_states=calib_states, 
                   iteration =qb.iteration)
+

@@ -529,16 +529,16 @@ iteration_echo_statistics += 1
 detuning = 0
 qb.wfm_pars = {
     't0':                   0.1e-6,
-    'tmax':                 40e-6,
-    'dt':                   0.4e-6,
+    'tmax':                 16e-6,
+    'dt':                   0.2e-6,
     'fsAWG':                2.4e9,
     'mu':                   0,
-    'sigma':                200e-3,
+    'sigma':                150e-3,
     }
 
 qb.exp_pars = {
     'exp':                  'T1',
-    'n_avg':                2048,
+    'n_avg':                512,
     'x0':                   qb.wfm_pars['t0'],
     'xmax':                 qb.wfm_pars['tmax'],
     'dx':                   qb.wfm_pars['dt'],
@@ -549,14 +549,14 @@ qb.exp_pars = {
 }
 
 timeSteps = round((qb.wfm_pars['tmax']-qb.wfm_pars['t0'])/qb.wfm_pars['dt'])-1
-nReps = 2000
+nReps =2000
 data = np.zeros((nReps,timeSteps))
 for i in range(nReps):
     print('repetition number',i)
     t,data[i,:],nSteps = qb.pulsed_exp(qb=qb_name,device_name=device_name, verbose=1,check_mixers=False,save_data=True)
     
     # Update Plots every 10 % of the measurement
-    if (np.mod(i+1,10) == 0 ):
+    if (np.mod(i+1,400) == 0 ):
         fitted_pars,error = pt.fit_data(x_vector=t[1:],y_vector=np.mean(data[:,1:],0),exp='T1',dx=t[-1]/nSteps,verbose=0)
         pt.plot_T1_data(t[1:],np.mean(data[:,1:],0),fitted_pars,qb=qb_name,exp_pars=qb.exp_pars,qb_pars=qb.qb_pars,device_name=device_name,project=project)
         

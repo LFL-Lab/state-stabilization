@@ -43,10 +43,10 @@ class qubit():
         "qb_IF":                     0,
         "qb_mixer_offsets":          [0, 0],  # I,Q
         "qb_mixer_imbalance":        [0, 0],  # gain,phase
-        "pi_len":                       64,  # needs to be multiple of 4
+        "pi_len":                       1024,  # needs to be multiple of 4
         "pi_half_amp":                  0.2,
         "pi_amp":                       0.45,
-        "gauss_len":                    64,
+        "gauss_len":                    1024,
         "gauss_amp":                    0.45,
         "rr_LO":                        6.70438e9,
         "rr_freq":                      6.4749e9,
@@ -383,10 +383,10 @@ class qubit():
 
         self.stop_result_unit(paths)
         self.enable_awg(self.qa, enable=0)
-
-        #if save_data:
-        #    self.save_data(qb, device_name, data=np.vstack(
-        #        (freqs, I_data, Q_data)))
+        filepath = self.create_datafile( qb, device_name,self.exp_pars)
+        if save_data:
+            self.save_data(filepath,  data=np.vstack(
+                (freqs, I_data, Q_data)))
 
         instfuncs.set_output('qubit', True)
 
@@ -467,8 +467,9 @@ class qubit():
         self.stop_result_unit(paths)
         self.enable_awg(self.qa, enable=0)
 
-        # if save_data:
-        #    self.save_data(qb,device_name,data=np.vstack((freqs,I_data,Q_data)))
+        if save_data:
+            filepath = self.create_datafile( qb, device_name,self.exp_pars)
+            self.save_data(filepath,data=np.vstack((freqs,I_data,Q_data)))
 
         return power_data, I_data, Q_data
 
@@ -497,7 +498,7 @@ class qubit():
         else:
             self.n_points, self.n_steps, self.x0, self.xmax, self.dx = utils.calc_steps(
                 self.exp_pars, verbose)
-
+            print( self.x0, self.xmax, self.dx)
         # setup HDAWG
         self.setup_awg()
         # setup QA AWG
@@ -517,9 +518,9 @@ class qubit():
               (int(1/8*exp_dur), exp_dur))
 
         if self.exp_pars['active_reset'] == True:
-            timeout = 1.25*exp_dur
-        else:
             timeout = 1.5*exp_dur
+        else:
+            timeout = 2*exp_dur
 
         sweep_data, paths = self.create_sweep_data_dict()  # subscribe to QA data path
         self.enable_awg(self.qa, enable=1)  # start the readout sequence
@@ -560,11 +561,11 @@ class qubit():
             Q = data.imag
             results = [[I], [Q]]
 
-        #if save_data:
-        #    filepath = self.create_datafile(qb, device_name)
-        #    self.save_data(filepath, np.vstack((x_array, data)))
-        #else:
-        #    pass
+        if save_data:
+            filepath = self.create_datafile(qb, device_name,self.exp_pars)
+            self.save_data(filepath, np.vstack((x_array, data)))
+        else:
+            pass
 
         return x_array, results, self.n_steps
 
@@ -632,7 +633,7 @@ class qubit():
         else:
             timeout = 1.2*exp_dur
 
-        data = np.zeros((3, self.n_steps+1))
+        #data = np.zeros((3, self.n_steps+1))
         self.exp_pars['initial-state'] = (0, 0)
 
         # for i,st in enumerate(['X','Y','Z']):
@@ -658,6 +659,7 @@ class qubit():
         unsorted_data = sweep_data[paths[0]][:]
         # print(unsorted_data)
         sorted_data = utils.sort_data(unsorted_data)/norm
+        #sorted_data = utils.sort_data(unsorted_data)
         # print(sorted_data)
         # data[i,:] = sweep_data[paths[0]][0:]/norm # normalizes the data according to the integration length
         # self.qa_result_reset()
@@ -668,9 +670,10 @@ class qubit():
         x_array = self.get_xdata_frm_ct()/self.exp_pars['fsAWG']
         # print(unsorted_data)
         # print(sorted_data)
-
+        filepath = self.create_datafile( qb, device_name,self.exp_pars)
         if save_data:
-            self.save_data(qb, device_name, data=np.vstack(
+            
+            self.save_data(filepath, data=np.vstack(
                 (x_array, sorted_data)))
 
         return x_array, sorted_data, self.n_steps
@@ -826,9 +829,10 @@ class qubit():
             I = data.real
             Q = data.imag
             results = [[I], [Q]]
-
-        # if save_data:
-        #     self.save_data(qb,device_name,data=np.vstack((x_array,v_b)))
+            
+        #filepath = self.create_datafile( qb, device_name,self.exp_pars)
+        #if save_data:
+        #    self.save_data(filepath,data=np.vstack((x_array,v_b)))
 
         return wfms, np.mean(results, axis=2), np.mean(v_b, 2), calib_states, self.n_steps
         # return wfms,results,v_b,self.n_steps
@@ -872,9 +876,23 @@ class qubit():
         # requirement of the AWG is satisfied.
         self.n_points, self.n_steps, self.x0, self.xmax, self.dx = utils.calc_steps(
             self.wfm_pars, verbose)
+        
+        # print out and write calculated steps to wave form pars
+        #remember to comment the print statements out later!
+        print('COMPUTED PARAMS:')
+        print('n_points',self.n_points)
+        print('n steps', self.n_steps)
+        print('x0',  self.x0)
+        print('xmax', self.xmax)
+        print('dx',self.dx )
+        print( '------------')
         self.wfm_pars['t0'] = self.x0/self.exp_pars['fsAWG']
         self.wfm_pars['tmax'] = (self.x0+self.n_points)/self.exp_pars['fsAWG']
         self.wfm_pars['dt'] = 1/self.exp_pars['fsAWG']
+        self.wfm_pars['n_steps'] = self.n_steps
+        self.wfm_pars['n_points'] = self.n_points
+        
+        #print(self.wfm_pars)
         # self.x0,self.xmax,self.dx,x_array,self.n_steps = utils.generate_xarray(self.exp_pars)
         # setup QA AWG
         # self.n_steps += 2
@@ -882,6 +900,8 @@ class qubit():
 
         # setup QA Result unit
         # configure UHFQA result unit, source = 2 means data is rotated
+        
+        # we set up the number of results from the qa that we expect to get
         self.config_qa(result_length=3*self.n_steps+2, source=source, ssb=False)
         #self.config_qa(result_length=self.n_steps+2, source=source, ssb=False)
         self.qa.sync()
@@ -922,7 +942,7 @@ class qubit():
         source = 2
         data = np.zeros((3*n_steps+2)) #1-d  array for data points (includes first and last point)
         v_b = np.zeros((3,n_steps))   # single array for calibrated bloch vector components  (3xn_steps)              
-       
+     
         #print(v_b.shape)
         self.setup_awg()
         # start the readout sequence
@@ -1031,8 +1051,10 @@ class qubit():
         #    seqs.setup_seq_pars(self.sequence,self.exp_pars['exp'],self.exp_pars,self.qb_pars,self.n_steps)
         # setup waveforms
         if self.exp_pars['exp'] == 'coherence-stabilization' or self.exp_pars['exp'] == 'T1' or self.exp_pars['exp'] == 'ramsey':
+            #print(self.xmax)
             self.sequence = seqs.setup_waveforms(
-                self.sequence, self.wfm_pars, self.exp_pars, self.qb_pars, self.n_points)
+                #self.sequence, self.wfm_pars, self.exp_pars, self.qb_pars, self.n_points)
+                self.sequence, self.wfm_pars, self.exp_pars, self.qb_pars, self.xmax)
         elif self.exp_pars['exp'] == 'spectroscopy' or self.exp_pars['exp'] == 'mixer-calibration':
             self.sequence = seqs.setup_waveforms(
                 self.sequence, {}, self.exp_pars, self.qb_pars)
@@ -1043,7 +1065,9 @@ class qubit():
         if self.exp_pars['exp'] != 'spectroscopy':
             if self.exp_pars['exp'] == 'coherence-stabilization':
                 ct = seqs.make_ct(self.hdawg_core, self.exp_pars, self.qb_pars,
-                                  self.wfm_pars, self.x0, self.dx, self.n_steps)
+                                    self.wfm_pars, self.x0, self.dx, self.n_steps)
+                # ct = seqs.make_ct(self.hdawg_core,self.exp_pars, self.qb_pars,
+                #                   self.wfm_pars,self.wfm_pars['t0'], self.wfm_pars['dt'], self.n_steps)
             else:
                 ct = seqs.make_ct(self.hdawg_core, self.exp_pars, self.qb_pars, {
                 }, self.x0, self.dx, self.n_steps)
@@ -1051,8 +1075,9 @@ class qubit():
             ct = {}
         # upload everything to awg
         self.upload_to_awg(ct)
-
-  # %% set up mixer calib         (delete section comment thing later)
+        #tt,xx,yy,xphase,yphase = self.get_ct_data()
+        #print(tt)
+  # %% set up mixer calib         
     def setup_mixer_calib(self, inst, amp=1):
         # sets AWG sampling rate to 292 kHz
         self.awg.setInt('/dev8233/awgs/0/time', 0)
@@ -2043,9 +2068,9 @@ class qubit():
             span_phi = 20.1
             dp = 2
         else:
-            span_amp = 1.2
+            span_amp = 1.15
             da = 0.02
-            span_phi = 4.01
+            span_phi = 3.01
             dp = 0.25
         
         # if OFF_power > -30:
@@ -2301,7 +2326,28 @@ class qubit():
                     x_array.insert(0, 0)
 
         return np.array(x_array)
-
+    
+    def get_ct_data(self):
+        x_array = []
+        amp1 =[]
+        amp2 = []
+        phase1 = []
+        phase2= []
+        ct = self.hdawg_core.awgs[0].commandtable.load_from_device()
+        
+        for i in range(self.n_steps):
+            value = ct.table[i].waveform.length
+            x_array.append((value))
+            value = ct.table[i].amplitude0.value
+            amp1.append(value)
+            value = ct.table[i].amplitude1.value
+            amp2.append(value)
+            value = ct.table[i].phase0.value
+            phase1.append(value)
+            value = ct.table[i].phase1.value
+            phase2.append(value)
+        return x_array,amp1,amp2,phase1,phase2
+    
     def get_wfms(self):
 
         wfmX = self.sequence.waveforms[1][0]
@@ -2485,6 +2531,40 @@ class qubit():
 
             for i in range(data.shape[0]):
                 writer.writerow(data[i, :])
+                
+    def create_plot_datafile(self,qb,device_name,exp_pars):
+        dir_path = f"D:\coherence-stabilization\{device_name}\{qb}\{self.exp_pars['exp']}-plot-data"
+        today = datetime.datetime.today().strftime('%m-%d-%Y')
+        if os.path.exists(dir_path):
+            pass
+        else:
+            print(f'Directory not found; making new directory at {dir_path}')
+            os.makedirs(dir_path)
+
+        try:
+            latest_file = max(glob.glob(os.path.join(
+                dir_path, '*.csv')), key=os.path.getmtime)
+            #print('latest file is:',latest_file)
+            # self.iteration = int(re.findall(r'\d+', latest_file)[1]) + 1
+            self.iteration = self.iteration + 1
+        except:
+            self.iteration = 1
+
+        if self.exp_pars['exp'] == 'spectroscopy':
+            filename = f'\\{self.exp_pars["exp"]}' + \
+                f'{self.exp_pars["element"]}_data_{self.iteration}.csv'
+        else:
+            filename = f'\\{self.exp_pars["exp"]}' + \
+                f'_data_{today}_{self.iteration}.csv'
+
+        with open(dir_path+filename, "w", newline="") as datafile:
+            writer = csv.writer(datafile)
+            writer.writerow(self.qb_pars.keys())
+            writer.writerow(self.qb_pars.values())
+            writer.writerow(self.exp_pars.keys())
+            writer.writerow(self.exp_pars.values())
+        
+        return dir_path+filename
     # else:
         #     with open(filepath,"w",newline="") as datafile:
         #         writer = csv.writer(datafile)
@@ -2580,7 +2660,19 @@ class qubit():
         plt.plot(t, vx[1:-1])
         plt.plot(t, vy[1:-1])
         plt.plot(t, vz[1:-1])
-
+    def update_qb_freq(self,value):
+        #UPDATE QB Frequency
+        self.qb_pars['qb_freq'] = value
+        
+        # UPDATE QB LO
+        self.update_qb_value(
+                'qb_LO', self.qb_pars['qb_freq']-self.qb_pars['qb_IF'])
+        
+        # SET QB IF TO AWG
+        self.awg.set('/dev8233/oscs/0/freq', self.qb_pars['qb_IF'])
+        
+        #print(f'Updating qb_freq to {value}')
+        
     def update_qb_value(self, key, value):
         '''Updates qubit dictionary value and writes new dictionary to json file'''
         if key == 'gauss_len':

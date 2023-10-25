@@ -191,7 +191,9 @@ def tomography_calibration_sequence():
                 executeTableEntry(i-1);
                 executeTableEntry(n_steps+2);
                 }
+                wait(10);
                 executeTableEntry(n_steps+3);
+                wait(10);
                 _trigger_readout_
                 _qubit_reset_
 
@@ -204,7 +206,9 @@ def tomography_calibration_sequence():
                 executeTableEntry(i-1);
                 executeTableEntry(n_steps+2);
                 }
+                wait(10);
                 executeTableEntry(n_steps+4);
+                wait(10);
                 _trigger_readout_
                 _qubit_reset_
       
@@ -217,13 +221,17 @@ def tomography_calibration_sequence():
                 executeTableEntry(i-1);
                 executeTableEntry(n_steps+2);
                 }
+                wait(10);
                 executeTableEntry(n_steps+5);
+                wait(10);
                 _trigger_readout_
                 _qubit_reset_
       }  
       
     }'''
-
+    
+    
+    
     # awg_program = awg_program.replace('_trigger_readout_',trigger_readout_sequence())
     
     return awg_program
@@ -406,6 +414,7 @@ def state_stabilization_sequence():
                 executeTableEntry(n_steps+1); // tomography x
                 _trigger_readout_
                 _qubit_reset_
+                wait(50);
                 executeTableEntry(n_steps); //preparation pulse
                 wait(50);
                 executeTableEntry(i);
@@ -413,17 +422,20 @@ def state_stabilization_sequence():
                 executeTableEntry(n_steps+2); // tomography y
                 _trigger_readout_
                 _qubit_reset_
-                executeTableEntry(n_steps); // preparation pulse
                 wait(50);
+                executeTableEntry(n_steps); // preparation pulse
+                wait(100);
                 executeTableEntry(i); // evolution
                 wait(50);
                 executeTableEntry(n_steps+3); // tomography z
                 _trigger_readout_
                 _qubit_reset_
+                wait(50);
                 }
-                executeTableEntry(n_steps+4); // pi pulse
-                _trigger_readout_ // exc state meas for calib
-                _qubit_reset_  
+        wait(100000);
+        executeTableEntry(n_steps+4); // pi pulse
+        _trigger_readout_ // exc state meas for calib
+        _qubit_reset_  
       }
     '''
     return awg_program
@@ -498,9 +510,10 @@ def qubit_reset_sequence():
     awg_program = '''
         waitDigTrigger(1);
         wait(1000);
-        if (getDigTrigger(2) == 0) {
+        if (getDigTrigger(2) == 1) {
             wait(300);
         } else {
+            wait(300);
             executeTableEntry(1023);
             wait(20000);
             }
@@ -588,13 +601,15 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
             Wave(*make_wave(pulse_type = 'constant',
                         wave_name = 'w_const',
                         amplitude = amp,
+                        exp_pars = exp_pars,
                         pulse_length = qubit_drive_dur,
                         output_order = '1')), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero',
                         amplitude = amp,
                         pulse_length = qubit_drive_dur,
-                        output_order = '2')) )
+                        output_order = '2',
+                        exp_pars = exp_pars)) )
 
     elif exp == 't-rabi' or exp == 'tomography-calibration':
         N = 64
@@ -604,36 +619,36 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_gauss_rise_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero1',
                         amplitude = 0,
                         pulse_length = int(N/2), ## Not sure about this one... 
-                        output_order = '12')))
+                        output_order = '12',exp_pars = exp_pars)))
     
         sequence.waveforms[1] = (
             Wave(*make_wave(pulse_type = 'fall',
                         wave_name = 'w_gauss_fall_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero2',
                         amplitude = 0,
                         pulse_length = int(N/2), ## Not sure about this one... 
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
         sequence.waveforms[2] = (
         Wave(*make_wave(pulse_type = 'constant',
                         wave_name = 'w_const_I',
                         amplitude = amp,
                         pulse_length = n_points,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_const_Q',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
         
         sequence.waveforms[3] = (
@@ -641,12 +656,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_gauss_I',
                         amplitude = 1,
                         pulse_length = qb_pars['pi_len'],
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_gauss_Q',
                         amplitude = 0,
                         pulse_length = qb_pars['pi_len'],
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
         )
         
         
@@ -659,12 +674,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_gauss',
                         amplitude = 1,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
 
     elif exp == 'T1':
@@ -676,12 +691,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
 
         sequence.waveforms[1] = (
@@ -690,13 +705,13 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         amplitude = 0,
                         pulse_length =n_points,
                         wfm_pars=wfm_pars,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'arb_Q',
                         wave_name = 'w_zero_Q',
                         amplitude = 1,
                         pulse_length = n_points,
                         wfm_pars=wfm_pars,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     ) 
 
     elif exp == 'ramsey':
@@ -708,12 +723,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi2_I',
                         amplitude = amp,
                         pulse_length =N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi2_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )    
 
         sequence.waveforms[1] = (
@@ -721,13 +736,14 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_zero_I',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'arb_Q',
                         wave_name = 'w_zero_Q',
                         amplitude = 1,
                         pulse_length = n_points,
                         wfm_pars = wfm_pars,
-                        output_order = '12'))
+                        output_order = '12',
+                        exp_pars = exp_pars))
     )    
 
     elif exp == 'echo':
@@ -740,12 +756,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi2_I',
                         amplitude = amp_half,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi2_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )    
     
         sequence.waveforms[1] = (
@@ -753,12 +769,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     ) 
     
         sequence.waveforms[2] = (
@@ -766,12 +782,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_zero_I',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
             Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero_Q',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
 
     elif exp == 'z-gate':
@@ -782,19 +798,19 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi2_I',
                         amplitude = amp_half,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi2_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )    
         sequence.waveforms[1] = (
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name= 'w_zero',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
 
     elif exp == 'tomography':
@@ -807,12 +823,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi2x_I',
                         amplitude = amp_half,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi2x_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )    
 
         sequence.waveforms[1] = (
@@ -820,12 +836,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_zero_I',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_zero_Q',
                         amplitude = 0,
                         pulse_length = n_points,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
     )
 
         sequence.waveforms[2] = (
@@ -833,12 +849,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi2y_I',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '21')), 
+                        output_order = '21',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'pi2',
                         wave_name = 'w_pi2y_Q',
                         amplitude = amp_half,
                         pulse_length = N,
-                        output_order = '21'))
+                        output_order = '21',exp_pars = exp_pars))
     )    
 
         sequence.waveforms[3] = (
@@ -846,12 +862,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))
+                        output_order = '12',exp_pars = exp_pars))
         ) 
         
     elif exp == 'coherence-stabilization':
@@ -865,12 +881,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                          wave_name = 'w_prep_I',
                          amplitude = 1,
                          pulse_length = N,
-                         output_order = '12')), 
+                         output_order = '12',exp_pars = exp_pars)), 
          Wave(*make_wave(pulse_type = 'zero',
                          wave_name = 'w_prep_Q',
                          amplitude = 0,
                          pulse_length = N,
-                         output_order = '12'))
+                         output_order = '12',exp_pars = exp_pars))
          )    
 
 
@@ -898,12 +914,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                          wave_name = 'w_tom_I',
                          amplitude = 1,
                          pulse_length = N,
-                         output_order = '12')), 
+                         output_order = '12',exp_pars = exp_pars)), 
          Wave(*make_wave(pulse_type = 'zero',
                          wave_name = 'w_tom_Q',
                          amplitude = 0,
                          pulse_length = N,
-                         output_order = '12')))
+                         output_order = '12',exp_pars = exp_pars)))
          
     elif exp == 'calibrate-rabi':
         N = qb_pars['pi_len']
@@ -913,12 +929,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_I',
                         amplitude = 1,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12')))
+                        output_order = '12',exp_pars = exp_pars)))
          
     elif exp == 'single-shot':
         N = qb_pars['pi_len']
@@ -928,12 +944,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_pi_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_pi_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12'))) 
+                        output_order = '12',exp_pars = exp_pars))) 
         
     elif exp == 'mixer-calibration':
         N = 64
@@ -943,12 +959,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_gauss1',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'constant',
                         wave_name = 'w_gauss2',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')))   
+                        output_order = '12',exp_pars = exp_pars)))   
 
     if exp_pars['active_reset'] == True:
         N = qb_pars['pi_len']
@@ -958,12 +974,12 @@ def setup_waveforms(sequence,wfm_pars={},exp_pars={},qb_pars={},n_points=1024):
                         wave_name = 'w_reset_I',
                         amplitude = amp,
                         pulse_length = N,
-                        output_order = '12')), 
+                        output_order = '12',exp_pars = exp_pars)), 
         Wave(*make_wave(pulse_type = 'zero',
                         wave_name = 'w_reset_Q',
                         amplitude = 0,
                         pulse_length = N,
-                        output_order = '12')))
+                        output_order = '12',exp_pars = exp_pars)))
     else:
         pass
         
@@ -1045,12 +1061,14 @@ def make_ct(hdawg_core,exp_pars={},qb_pars={},wfm_pars={},x0=0,dx=16,n_steps=100
     if exp == 'coherence-stabilization':
         wfm_index = 0
         theta_prep,amp_prep,base_amp = determine_axes_coherence(exp_pars,qb_pars)
-        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps) #Noise and coherent control wfms
+        #ct_sweep_length(ct,exp,1,qb_pars,wfm_pars['t0'],wfm_pars['dt'],90,n_steps)
+        ct_sweep_length(ct,exp,1,qb_pars,x0,dx,90,n_steps)#Noise and coherent control wfms
         ct = arb_pulse(ct,n_steps,0,amp_prep,base_theta,theta_prep) # preparation pulse
         ct = arb_pulse(ct,n_steps+1,2,0.5*base_amp,base_theta,180) # tomography x pulse
         ct = arb_pulse(ct,n_steps+2,2,0.5*base_amp,base_theta,-90) # tomography y pulse
         ct = arb_pulse(ct,n_steps+3,2,0,base_theta,0) # tomography z pulse
-        ct = arb_pulse(ct,n_steps+4,2,qb_pars['pi_amp'],base_theta,0) # pi pulse    
+        ct = arb_pulse(ct,n_steps+4,2,qb_pars['pi_amp'],base_theta,0) # pi pulse 
+       
     elif exp == 't-rabi':
         wfm_index = 3
         theta_prep,theta_tom,amp_prep,amp_tom = determine_axes(exp_pars,qb_pars)
@@ -1111,10 +1129,13 @@ def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
     #     n_steps += 2
     # else:
     #     pass
-    
+    #ct_sweep_length(ct,exp,1,qb_pars,wfm_pars['t0'],wfm_pars['dt'],90,n_steps) 
+    # print('nsteps (total wfms) ', n_steps)
+    # print('starting at:', x0)
+    # print('dt is: ', dx)
     for i in range(n_steps):
         wfm_length = x0 + i * dx
-        # print(wfm_length)
+        #print(i,wfm_length)
         ct.table[i].waveform.index = wfm_index
         ct.table[i].waveform.length = wfm_length
         ct.table[i].amplitude0.value = 1.0
@@ -1122,6 +1143,7 @@ def ct_sweep_length(ct,exp,wfm_index,qb_pars,x0,dx,theta,n_steps=100):
         ct.table[i].phase0.value = theta
         #ct.table[i].phase1.value = 180 + qb_pars['qb_mixer_imbalance'][1] + theta
         ct.table[i].phase1.value = -90 + theta
+    # print('\n last waveform length is', wfm_length)
         
 def ct_sweep_amp(ct,wfm_index,exp_pars={},qb_pars={},n_steps=100):
     
@@ -1283,10 +1305,11 @@ def determine_axes_new(exp_pars,qb_pars):
     print(f"Measuring along {exp_pars['tomographic-axis']} axis")
     
     base_amp = qb_pars['pi_amp']
-    
+    #print(base_amp)
     # In units of pi
     start_axis = exp_pars['initial-state'][0]
     rot_axis = exp_pars['initial-state'][1]
+    #print(start_axis)
     
     # Convert starting axis to degrees to match tomographic axis:
     theta_prep = start_axis * 180
@@ -1311,6 +1334,7 @@ def determine_axes_new(exp_pars,qb_pars):
     # Pulse amplitude for preparation and for tomography
     amp_prep = rot_axis*base_amp
     amp_tom = amp_tom*base_amp
+    #print(amp_prep,amp_tom)
     
     #print(theta_prep,theta_tom,amp_prep,amp_tom)
     return theta_prep,theta_tom,amp_prep,amp_tom

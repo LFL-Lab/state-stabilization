@@ -52,9 +52,9 @@ def even(n):
 
 def roundToBase(n_points,base=16):
     '''Make the AWG happy by uploading a wfm whose points are multiple of 16'''
-    y = int(base*round(n_points/base))
+    y = int(base*math.floor(n_points/base))
     if y==0:
-        y = int(base*round(n_points/base+1))
+        y = int(base*math.floor(n_points/base+1))
         
     return y
 
@@ -77,7 +77,14 @@ def gen_arb_wfm(wfm_type,wfm_pars={},exp_pars={},qb_pars={},normalize=False,n_po
     OUTPUT:
     -----
     '''
-    time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
+    exp = exp_pars['exp']
+    if exp == 'coherence-stabilization':
+    #
+        time_arr = np.arange(wfm_pars['t0'],wfm_pars['tmax'],wfm_pars['dt'])
+    else:
+        # = np.arange(wfm_pars['t0'],wfm_pars['tmax']-wfm_pars['dt']/2,wfm_pars['dt'])
+    #print(len(time_arr), n_points)
+        time_arr = np.linspace(wfm_pars['t0'],wfm_pars['tmax'],n_points)
     if wfm_type == 'rising':
         gamma = 1/(2*wfm_pars['T2'])
         #gamma = np.pi/(2*wfm_pars['T2'])
@@ -86,10 +93,11 @@ def gen_arb_wfm(wfm_type,wfm_pars={},exp_pars={},qb_pars={},normalize=False,n_po
                           qb_pars=qb_pars,
                           gamma=gamma,
                           plot = True)
+        print('\n rising is',len(time_arr))
         #wfm = compute_wfm(time_arr,gamma)
     elif wfm_type == 'markov':
-        wfm_long = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], 2*n_points)
-        wfm = wfm_long[int(n_points/2):3*int(n_points/2)]
+        wfm_long = np.random.normal(wfm_pars['mu'], wfm_pars['sigma'], 2*len(time_arr))
+        wfm = wfm_long[int(len(time_arr)/2):3*int(len(time_arr)/2)]
         Nf = 1/2*wfm_pars["fsAWG"]
         # print(f'Nyquist frequency is {Nf*1e-6:.1f} MHz')
         fc = 50e6
@@ -131,12 +139,18 @@ def calc_steps(pars,verbose=True):
         dt (int): starting sequence point in units of samples.
 
     """
+    
+    # convert inital time step to samples (integer multiple of 16)
     t0 = roundToBase(pars['fsAWG']*pars['x0'])
+    # convert time intervals into samples (integer multiple of 16)
     dt = roundToBase(pars['fsAWG']*pars['dx'])
+    # compute number of samples required for the full time (integer multiple of 16)
     n_points = roundToBase((pars['xmax']-pars['x0'])*pars['fsAWG']) # this ensures there is an integer number of time points
     n_steps = int(n_points/dt) 
-    tmax = dt*n_steps
-   
+    
+    tmax = dt*n_steps + t0
+    #tmax = roundToBase((pars['xmax'])*pars['fsAWG']) #this is the same value as tmax
+    
     if verbose:
         print("dt is %.1f ns (%d pts) ==> f_s = %.1f MHz \nn_points = %d | n_steps is %d | Pulse length start = %.1f ns (%d pts)" %(dt/pars['fsAWG']*1e9,dt,1e-6*pars['fsAWG']/dt,n_points,n_steps,t0*1e9/pars['fsAWG'],t0))
     else:
